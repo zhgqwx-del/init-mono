@@ -1,6 +1,6 @@
 # GitHub 发布
 
-本仓库包含技能源码、生成模板、实操教程、三个服务的旧项目种子、feature 参考补丁和验收工具。运行生成的业务 Git 仓库与机器相关的工作树留在演练目录，公开克隆可通过 setup 重建。
+本仓库包含技能源码、生成模板、实操教程、三个服务的旧项目种子、feature 参考补丁和验收工具。运行生成的业务 Git 仓库和本机工作树保存在演练目录。拥有仓库访问权限的读者可在克隆后通过 setup 重建。
 
 ## 发布前验证
 
@@ -24,7 +24,7 @@ gh repo create OWNER/REPO --public --source . --remote origin --push
 
 ## 发布技能 ZIP
 
-版本号按实际发布填写。技能包可以从项目外解压后运行，也可放进项目 .agents/skills 中使用。
+版本号按实际发布填写，发布分支的 workflow 通过后上传对应提交的 ZIP。读者可从 [Releases](https://github.com/zhgqwx-del/init-mono/releases) 下载该版本，首次使用见 [团队快速上手](../QUICKSTART.md)。
 
 ~~~sh
 python3 -B scripts/package_skill.py
