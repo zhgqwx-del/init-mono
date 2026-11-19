@@ -60,6 +60,10 @@ python3 -B .agents/skills/init_mono/scripts/init_mono.py INPUT TARGET
 
 [输入说明](.agents/skills/init_mono/references/inputs.md) 覆盖 worktree、clone、reference，以及 directory、repository、process 三种输出。暂时只有流程资料时可使用[流程输入示例](examples/process-only.json)，它生成共享说明与技能，未知的运行条件保留待补。
 
+~~~sh
+python3 -B .agents/skills/init_mono/scripts/init_mono.py examples/process-only.json ../mono-process-demo
+~~~
+
 生成后共享知识在 docs/mono，各需求在 tasks，各仓独立任务工作树在 work。新任务以当前接入版本为基线，开工前核对并按需要更新到已合并版本。
 
 ## 仓库与发布
