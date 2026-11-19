@@ -196,6 +196,8 @@ def main():
         else:
             space, work, task = paths(root)
             run(sys.executable, "-B", space / "scripts/mono.py", "check", TASK)
+    except KeyboardInterrupt:
+        return 130
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         print(error, file=sys.stderr)
         return 1
