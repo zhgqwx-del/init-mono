@@ -37,3 +37,9 @@
 ## 持续维护
 
 把有复用价值的系统知识和决定写回 docs/mono。新的需求使用新的任务号和工作树。已有任务接手时读取任务、计划、验收和交付记录，记录当前阻塞及下一步。清理工作树前确认改动已保存，使用对应项目的 git worktree remove，保留任务记录。
+
+## 追加项目与对接 STDD/SDD
+
+在协作根运行 python3 -B scripts/mono.py add NAME SOURCE --role "职责"。SOURCE 可为 GitHub 或 GitLab 的 Git 地址、已有本地 Git 仓库、普通资料目录。运行 python3 -B scripts/mono.py repos 查看已接入项目。[仓库清单](docs/mono/projects.md) 会随登记更新。
+
+从 [STDD/SDD 对接说明](docs/mono/stdd-sdd.md) 获取完整示例。new 支持 --base 项目=Git引用 和 --branch 项目=分支名。status 任务号 显示任务工作树、实际 SHA 和仓内入口。需要生成 STDD 变更时，用 stdd 任务号 项目名 本仓变更ID --title "标题" 调用本仓模板，已有变更用原 ID 直接关联。

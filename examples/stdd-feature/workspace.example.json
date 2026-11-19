@@ -1,0 +1,13 @@
+{
+  "name": "账号产品",
+  "summary": "从 Web 发起登录，账号服务校验身份，按需由资料服务提供用户资料。",
+  "owner": "账号需求负责人",
+  "kind": "repository",
+  "projects": [
+    {"name": "frontend", "source": "/path/to/frontend", "role": "登录界面和登录后的跳转"},
+    {"name": "auth-api", "source": "git@github.com:example/auth-api.git", "ref": "origin/main", "role": "认证接口与会话"}
+  ],
+  "relationships": [
+    {"from": "frontend", "to": "auth-api", "description": "登录请求与会话行为查各仓现有接口契约。"}
+  ]
+}

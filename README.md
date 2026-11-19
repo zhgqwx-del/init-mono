@@ -4,6 +4,18 @@
 
 本项目借鉴 Manus Mono 的共享上下文与端到端交付实践。方法与实现的对应关系见[说明](.agents/skills/init_mono/references/method.md)。
 
+## 日常使用
+
+一个 Mono 根目录接入一组可以持续协作的项目。远端 GitHub/GitLab 地址会独立 clone，已有本地 Git 仓库通过 worktree 接入，普通资料目录登记为 reference。Git 协调仓库记录系统关系、需求与联合验收，业务仓独立管理版本。
+
+- 初始化与升级使用 init_mono。已有工作区可运行初始化脚本的 --upgrade WORKSPACE，保留项目与需求记录。
+- 新项目用 scripts/mono.py add NAME SOURCE 登记，无需重建。scripts/mono.py repos 查看清单。
+- 每个 feature 选参与仓库，在 work/需求号/ 下建立各仓工作树。支持按仓指定 --base 和 --branch。
+- 业务仓的 STDD/SDD 继续负责单仓规格、变更、测试和归档。status 读取各仓入口，stdd 调用原生变更模板或关联已有变更。Mono 记录共同契约、实际跨服务验收和发布依赖。
+
+[现有 STDD 仓库接入与登录需求示例](examples/stdd-feature/README.md)
+
+
 ## 先跑一个前端加两个后端的 feature
 
 [三仓实操教程](examples/three-services/README.md) 以活动名额为例，演示接手已有项目后，新增「展示剩余名额并筛选可报名活动」。
@@ -71,6 +83,7 @@ python3 -B .agents/skills/init_mono/scripts/init_mono.py examples/process-only.j
 ~~~text
 .agents/skills/init_mono/       技能源码与生成模板
 examples/three-services/        三仓旧代码 参考补丁 教程与验收
+examples/stdd-feature/          STDD 仓库接入与登录需求输入
 examples/process-only.json     仅流程的输入例子
 scripts/package_skill.py       可重现的技能 ZIP 打包
 tests/                         脚手架行为测试

@@ -1,0 +1,7 @@
+{
+  "scripts/mono.py": "a6a2d079dc9be4bfe2e9b868a68ae6f2de4927ff666a056432b9aed0a2211b58",
+  "README.md": "0fc3bc22434549ea471e64538e653dc4e245b138751df2b8fa6679a39f00d806",
+  ".agents/skills/mono-start/SKILL.md": "f7413ea566c4fcbab45e576ccbbd13c1e2fb18622c47fb4517357767bb1be56f",
+  ".agents/skills/mono-verify/SKILL.md": "66acdf7b9ce02f55befccdda77d81e49e4480412f09f590c47724c3caba2ce62",
+  ".agents/skills/mono-wrap/SKILL.md": "3f40c79dbb6660a419ade361ea7ebb8b8f1a657b6bad78ef59893de0b9344c0b"
+}

@@ -7,3 +7,5 @@
 - 交接、发布准备与复盘使用 .agents/skills/mono-wrap/SKILL.md。
 - 系统知识与架构决定查 docs/mono/decisions.md。启动、测试数据、日志和恢复查 docs/mono/operations.md。按需读取相关项目与资料。
 - 在根目录管理共享上下文，进入具体项目目录再提交应用代码。用一个需求负责人协调跨项目结果，沿用现有项目的评审和权限安排。
+
+- 最新仓库名单从 mono.json 或 docs/mono/projects.md 获取。涉及 STDD/SDD 时读 docs/mono/stdd-sdd.md，并在对应项目的任务工作树读取业务仓规则与技能。

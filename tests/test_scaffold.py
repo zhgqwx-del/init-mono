@@ -111,6 +111,81 @@ class ScaffoldTests(unittest.TestCase):
         self.call(space / "scripts/mono.py", "new", self.task)
         self.call(space / "scripts/mono.py", "check", "CAT-42", ok=False)
 
+    def test_auto_sources_and_add_preserve_context_and_existing_evidence(self):
+        self.config["projects"][0].pop("mode")
+        self.config["projects"][1].update(source=self.sources[1].as_uri(), mode="auto")
+        space = self.task_space()
+        cli = space / "scripts/mono.py"
+        self.run_receipt(space, sys.executable, "-c", "assert True")
+        context_path = space / "docs/mono/system.md"
+        context = context_path.read_bytes()
+        docs = self.root / "docs"
+        docs.mkdir()
+        self.call(cli, "add", "docs", docs)
+        source = self.root / "identity"
+        git(self.root, "clone", "-q", str(self.sources[1]), str(source))
+        failed = self.call(cli, "add", "identity", source.as_uri(), "--ref", "missing", ok=False)
+        self.assertFalse((space / "repos/identity").exists(), failed.stdout)
+        self.call(cli, "add", "identity", source.as_uri(), "--ref", "origin/main")
+        self.call(cli, "add", "web", source, ok=False)
+        self.call(cli, "check", "CAT-42")
+        self.assertEqual(context_path.read_bytes(), context)
+        projects = json.loads(self.call(cli, "repos").stdout)
+        self.assertEqual([p["mode"] for p in projects], ["worktree", "clone", "reference", "clone"])
+        self.assertIn("repos/identity", (space / "docs/mono/projects.md").read_text())
+        self.assertFalse((space / ".gitmodules").exists())
+
+    def test_new_with_custom_branch_and_fresh_ref_leaves_attach_base(self):
+        space = self.init()
+        source = self.sources[0]
+        (source / "app.txt").write_text("next merged base\n")
+        git(source, "add", "app.txt")
+        git(source, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+            "commit", "-qm", "New baseline")
+        cli = space / "scripts/mono.py"
+        self.call(cli, "new", self.task, "--worktrees", "--base", "web=main",
+                  "--branch", "web=feat/catalog-search")
+        rows = json.loads(self.call(cli, "status", "CAT-42").stdout)
+        self.assertEqual(rows["web"]["branch"], "feat/catalog-search")
+        self.assertEqual(rows["web"]["sha"], git(source, "rev-parse", "HEAD"))
+        self.assertEqual(rows["api"]["branch"], "mono/CAT-42")
+        self.assertEqual((space / "repos/web/app.txt").read_text(), "baseline\n")
+        self.assertEqual((space / "work/CAT-42/web/app.txt").read_text(), "next merged base\n")
+
+    def test_stdd_existing_changes_resolve_when_archived_and_base_is_protected(self):
+        space = self.task_space()
+        cli = space / "scripts/mono.py"
+        work = space / "work/CAT-42/web"
+        change = work / "changes/014-login"
+        change.mkdir(parents=True)
+        (change / "change.md").write_text("Existing STDD change\n")
+        self.call(cli, "stdd", "CAT-42", "web", "014-login")
+        self.call(cli, "stdd", "CAT-42", "web", "015-login", ok=False)
+        archive = work / "changes/archive"
+        archive.mkdir()
+        change.rename(archive / change.name)
+        rows = json.loads(self.call(cli, "status", "CAT-42").stdout)
+        self.assertEqual(rows["web"]["stdd_change"]["path"], "changes/archive/014-login")
+        self.assertEqual((archive / change.name / "change.md").read_text(), "Existing STDD change\n")
+        git(work, "switch", "-qc", "unexpected/branch")
+        response = self.call(cli, "stdd", "CAT-42", "web", "014-login", ok=False)
+        self.assertIn("expected mono/CAT-42", response.stdout)
+        spec = json.loads(self.task.read_text())
+        spec["id"] = "CAT-43"
+        self.task.write_text(json.dumps(spec))
+        self.call(cli, "new", self.task)
+        self.call(cli, "stdd", "CAT-43", "web", "014-login", "--title", "Login", ok=False)
+        self.assertFalse((space / "repos/web/changes").exists())
+
+    def test_upgrade_refuses_custom_scripts_before_writing(self):
+        space = self.init()
+        cli = space / "scripts/mono.py"
+        cli.write_text("# customized implementation\n")
+        before = (space / "mono.json").read_bytes()
+        self.call(INIT, "--upgrade", space, ok=False)
+        self.assertEqual(cli.read_text(), "# customized implementation\n")
+        self.assertEqual((space / "mono.json").read_bytes(), before)
+
     def test_failure_and_changed_code_cannot_pass(self):
         space = self.task_space()
         self.run_receipt(space, sys.executable, "-c", "raise SystemExit(3)", ok=False)

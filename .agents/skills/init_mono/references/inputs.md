@@ -13,7 +13,7 @@ Python 3.9 或以上版本和 Git 可直接运行生成器。默认生成普通�
       ]
     }
 
-name、summary、projects 必填，每项目必填 name、source、role。最低提供两个项目。未指定 mode 时生成 reference 入口，后续由 Agent 查明真实接入方式。未知的负责人与运行条件保留为待核实，可继续完善。
+name、summary、projects 必填，每项目必填 name、source。最低提供两个项目。未指定 mode 时采用 auto。远端 Git 地址用 clone，本地 Git 根目录用 worktree，普通目录用 reference。role 缺省使用项目名。未知的负责人与运行条件保留为待核实，可继续完善。
 
 ## 完整接入
 
@@ -47,3 +47,11 @@ name、summary、projects 必填，每项目必填 name、source、role。最低
 id、title、goal 必填。owner 默认使用协作负责人。projects 默认所有已接入项目，可只选受影响项目。contract 和 acceptance 可在初始化任务后根据代码和业务补全。task.json 为结构化判据，task.md 补充上下文，修改时保持一致。
 
 在协作根目录运行 python3 scripts/mono.py new INPUT --worktrees。新任务使用 mono/任务号 分支，已有分支或任务目录会明确提示，接手时读取原记录。--worktrees 用于在隔离分支上实施，省略时复用已接入的检出。
+
+## 追加项目与升级
+
+在生成的工作区执行 python3 -B scripts/mono.py add NAME SOURCE --role 职责。可选 --mode、--ref 和 --owner。该命令不会覆盖同名项目，保留当前手写系统说明，并更新清单。add 的相对地址从当前目录解析。process 模式仍只登记引用。
+
+旧工作区从最新版技能运行 python3 -B scripts/init_mono.py --upgrade WORKSPACE。工具检查待替换文件与已知旧版一致，保留业务目录、任务与手写系统说明。若检测到本地改过的技能或脚本，请先比对再合并。
+
+日常需求可传多组 --base PROJECT=REF 和 --branch PROJECT=BRANCH，基线需先在对应 Git 仓库中可解析。接入 STDD/SDD 后，打开生成工作区的 docs/mono/stdd-sdd.md。

@@ -12,6 +12,9 @@ import subprocess
 import sys
 import uuid
 
+from mono_projects import attach, head, prepare_project, read_registry, write_lock, write_project_index, write_registry
+from mono_stdd import bind, describe
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -45,7 +48,34 @@ def task_dir(task_id):
     return ROOT / "tasks" / identifier(task_id)
 
 
-def create_task(input_path, use_worktrees):
+def key_values(values, projects, label):
+    entries = {}
+    for value in values:
+        name, separator, ref = value.partition("=")
+        if not separator or name not in projects or not ref or name in entries:
+            raise ValueError(f"invalid or repeated {label}: {value}; use PROJECT=VALUE")
+        entries[name] = ref
+    return entries
+
+
+def add_project(args):
+    with write_lock(ROOT / ".mono-registry.lock"):
+        registry = read_registry(ROOT)
+        raw = {key: value for key, value in {
+            "name": args.name, "source": args.source, "mode": args.mode, "ref": args.ref,
+            "role": args.role, "owner": args.owner,
+        }.items() if value is not None}
+        project = prepare_project(raw, Path.cwd(), ROOT, registry["owner"], registry["kind"])
+        if any(row["name"] == project["name"] for row in registry["projects"]):
+            raise ValueError(f"project already registered: {project['name']}")
+        attach(ROOT, project)
+        registry["projects"].append(project)
+        write_registry(ROOT, registry)
+        write_project_index(ROOT, registry)
+        print(json.dumps(project, ensure_ascii=False, indent=2))
+
+
+def create_task(input_path, use_worktrees, base_args=(), branch_args=()):
     spec = read_json(input_path)
     if not isinstance(spec, dict):
         raise ValueError("task input must be an object")
@@ -60,6 +90,10 @@ def create_task(input_path, use_worktrees):
     known = {p["name"]: p for p in registry["projects"]}
     if set(names) - known.keys():
         raise ValueError("task refers to unknown projects")
+    bases = key_values(base_args, names, "base")
+    branches = key_values(branch_args, names, "branch")
+    if (bases or branches) and not use_worktrees:
+        raise ValueError("--base and --branch require --worktrees")
     acceptance = spec.get("acceptance", [])
     if not isinstance(acceptance, list) or any(not isinstance(a, dict) for a in acceptance):
         raise ValueError("acceptance must be an array of objects")
@@ -78,13 +112,17 @@ def create_task(input_path, use_worktrees):
         raise ValueError(f"task/work directory already exists: {task_id}")
 
     state = {}
-    branch = "mono/" + task_id
     branch_keys = set()
     for name in names:
         project = known[name]
         location = ROOT / project["path"] if project.get("path") else None
-        entry = {"path": str(location) if location else "", "source": project["source"]}
+        entry = {"path": project.get("path", ""), "source": project["source"]}
+        if not location and (name in bases or name in branches):
+            raise ValueError(f"{name}: attach a Git checkout before selecting a base or branch")
         if use_worktrees and location:
+            branch = branches.get(name, "mono/" + task_id)
+            if git(location, "check-ref-format", "--branch", branch).decode().strip() != branch:
+                raise ValueError(f"{name}: supply a literal branch name")
             if git(location, "branch", "--list", branch).strip():
                 raise ValueError(f"{name}: task branch already exists: {branch}")
             common = git(location, "rev-parse", "--git-common-dir").decode().strip()
@@ -92,7 +130,9 @@ def create_task(input_path, use_worktrees):
             if key in branch_keys:
                 raise ValueError("the same source repository appears twice with the same task branch")
             branch_keys.add(key)
-            entry["base_sha"] = git(location, "rev-parse", "HEAD").decode().strip()
+            ref = bases.get(name, "HEAD")
+            entry.update(branch=branch, base_ref=ref, base_sha=head(location, ref),
+                         base_path=entry["path"], path="")
         state[name] = entry
     destination.parent.mkdir(exist_ok=True)
     destination.mkdir(exist_ok=False)
@@ -126,13 +166,13 @@ def create_task(input_path, use_worktrees):
     if use_worktrees:
         try:
             for name, entry in state.items():
-                if not entry["path"]:
+                if not entry.get("base_path"):
                     continue
                 worktree = ROOT / "work" / task_id / name
                 worktree.parent.mkdir(parents=True, exist_ok=True)
-                git(entry["path"], "worktree", "add", "--no-track", "-b",
-                    branch, str(worktree), entry["base_sha"])
-                entry["path"] = str(worktree)
+                git(ROOT / entry["base_path"], "worktree", "add", "--no-track", "-b",
+                    entry["branch"], str(worktree), entry["base_sha"])
+                entry["path"] = str(worktree.relative_to(ROOT))
                 write_json(destination / "projects.json", state)
         except (OSError, subprocess.CalledProcessError, KeyboardInterrupt):
             print(f"Partial task preserved at {destination}; inspect projects.json and git worktree list.",
@@ -174,7 +214,7 @@ def snapshot(task):
         if not location:
             result[name] = {"available": False, "source": entry["source"]}
             continue
-        root = Path(location)
+        root = ROOT / location
         result[name] = {
             "available": True, "sha": git(root, "rev-parse", "HEAD").decode().strip(),
             "files_sha256": content_digest(root),
@@ -182,10 +222,26 @@ def snapshot(task):
     return result
 
 
-def spec_digest(task):
+def spec_digest(task, version=2):
     digest = hashlib.sha256()
-    paths = [task / "task.json", task / "task.md", ROOT / "mono.json",
-             ROOT / "AGENTS.md", *(ROOT / "docs/mono").glob("*.md")]
+    paths = [task / "task.json", task / "task.md", ROOT / "AGENTS.md",
+             *(path for path in (ROOT / "docs/mono").glob("*.md")
+               if path.name not in {"projects.md", "stdd-sdd.md"})]
+    if version == 1:
+        paths.append(ROOT / "mono.json")
+    else:
+        states = read_json(task / "projects.json")
+        registry = read_registry(ROOT)
+        context = {
+            "projects": [p for p in registry["projects"] if p["name"] in states],
+            "relationships": [r for r in registry.get("relationships", [])
+                              if r["from"] in states and r["to"] in states],
+        }
+        digest.update(json.dumps(context, sort_keys=True, ensure_ascii=False).encode())
+        paths.append(task / "projects.json")
+        bindings = task / "stdd.json"
+        if bindings.exists():
+            paths.append(bindings)
     for path in sorted(paths):
         digest.update(str(path.relative_to(ROOT)).encode() + b"\0" + path.read_bytes())
     return digest.hexdigest()
@@ -217,7 +273,7 @@ def execute(args):
             output = process.communicate()[0]
     after, spec_after = snapshot(task), spec_digest(task)
     receipt = {
-        "task_id": args.task, "covers": args.ac, "command": command,
+        "version": 2, "task_id": args.task, "covers": args.ac, "command": command,
         "cwd": str((ROOT / args.cwd).resolve()), "started": start,
         "finished": datetime.now(timezone.utc).isoformat(),
         "exit_code": process.returncode, "timed_out": timed_out,
@@ -265,7 +321,9 @@ def check(task_id):
                     or receipt.get("exit_code") != 0 or receipt.get("timed_out")
                     or receipt.get("stable") is not True
                     or receipt.get("before") != current or receipt.get("after") != current
-                    or receipt.get("spec_digest") != signature):
+                    or receipt.get("spec_digest") != (
+                        signature if receipt.get("version") == 2 else spec_digest(task, version=1)
+                    )):
                 errors.append(f"{label}: failed, unrelated, or outdated evidence {entry}")
     for error in errors:
         print("PENDING " + error)
@@ -281,6 +339,21 @@ def main():
     new = commands.add_parser("new")
     new.add_argument("input", type=Path)
     new.add_argument("--worktrees", action="store_true")
+    new.add_argument("--base", action="append", default=[], metavar="PROJECT=REF")
+    new.add_argument("--branch", action="append", default=[], metavar="PROJECT=BRANCH")
+    add = commands.add_parser("add", help="register and attach another repository")
+    add.add_argument("name")
+    add.add_argument("source")
+    for option in ("role", "ref", "owner", "mode"):
+        add.add_argument("--" + option)
+    commands.add_parser("repos", help="list registered repositories")
+    commands.add_parser("status", help="list task checkouts and their STDD entry points").add_argument("task")
+    stdd = commands.add_parser("stdd", help="create or link a native STDD change for a project")
+    stdd.add_argument("task")
+    stdd.add_argument("project")
+    stdd.add_argument("change")
+    stdd.add_argument("--title")
+    stdd.add_argument("--design", action="store_true")
     run = commands.add_parser("run")
     run.add_argument("task")
     run.add_argument("--ac", action="append", default=[])
@@ -296,7 +369,21 @@ def main():
     args = parser.parse_args(args_list)
     try:
         if args.operation == "new":
-            create_task(args.input.resolve(), args.worktrees)
+            create_task(args.input.resolve(), args.worktrees, args.base, args.branch)
+            return 0
+        if args.operation == "add":
+            add_project(args)
+            return 0
+        if args.operation == "repos":
+            print(json.dumps(read_registry(ROOT)["projects"], ensure_ascii=False, indent=2))
+            return 0
+        if args.operation in {"status", "stdd"}:
+            task = task_dir(args.task)
+            states = read_json(task / "projects.json")
+            if args.operation == "status":
+                print(json.dumps(describe(ROOT, task, states), ensure_ascii=False, indent=2))
+            else:
+                bind(ROOT, task, args.project, states[args.project], args.change, args.title, args.design)
             return 0
         if args.operation == "run":
             args.command = command

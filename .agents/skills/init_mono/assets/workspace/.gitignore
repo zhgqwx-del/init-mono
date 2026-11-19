@@ -1,5 +1,7 @@
 /repos/
 /work/
+.mono-registry.lock/
+.mono-stdd.lock/
 **/__pycache__/
 *.pyc
 .DS_Store
