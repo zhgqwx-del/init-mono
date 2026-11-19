@@ -26,9 +26,16 @@ jobs:
           python3 -B examples/three-services/demo.py verify "$RUNNER_TEMP/mono-example" --stage baseline
       - name: New feature must fail before implementation
         run: |
-          if python3 -B examples/three-services/demo.py verify "$RUNNER_TEMP/mono-example" --stage feature; then
+          if python3 -B examples/three-services/demo.py verify "$RUNNER_TEMP/mono-example" --stage feature > "$RUNNER_TEMP/before-feature.log" 2>&1; then
             exit 1
           fi
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          output = (Path(os.environ["RUNNER_TEMP"]) / "before-feature.log").read_text()
+          if "AssertionError" not in output or "404" not in output:
+              raise RuntimeError("Failure did not demonstrate the missing feature")
+          PY
       - name: Implement and test real HTTP feature
         run: |
           python3 -B examples/three-services/demo.py apply "$RUNNER_TEMP/mono-example"
