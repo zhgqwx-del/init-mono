@@ -1,0 +1,434 @@
+{
+  "feature": "FEAT-301",
+  "run_date": "2026-11-19",
+  "baseline": "PASS",
+  "before_implementation": "New acceptance failed at missing batch endpoint with HTTP 404.",
+  "projects": {
+    "portal-web": "8adf8f798d16fc5154d24f073419a55f61c7a7a5",
+    "campaign-api": "4caa0c4019587674417b54aefbb4f54f702152e2",
+    "capacity-api": "1fe46cab1ad16840ff4b952c72936fb2cdaed03c"
+  },
+  "http_checks": [
+    {
+      "id": "AC01",
+      "name": "批量名额、零下限及旧单活动接口",
+      "status": "PASS",
+      "actual": {
+        "batch": {
+          "items": [
+            {
+              "id": "A101",
+              "remaining": 10
+            },
+            {
+              "id": "A102",
+              "remaining": 3
+            },
+            {
+              "id": "A103",
+              "remaining": 0
+            },
+            {
+              "id": "A104",
+              "remaining": 0
+            }
+          ]
+        },
+        "legacy_single": {
+          "id": "A102",
+          "capacity": 10,
+          "reserved": 7
+        }
+      }
+    },
+    {
+      "id": "AC02",
+      "name": "后端一通过真实 HTTP 聚合后端二",
+      "status": "PASS",
+      "actual": {
+        "items": [
+          {
+            "id": "A101",
+            "name": "春季活动",
+            "status": "DRAFT",
+            "remaining": 10,
+            "bookable": false
+          },
+          {
+            "id": "A102",
+            "name": "春季上新",
+            "status": "ACTIVE",
+            "remaining": 3,
+            "bookable": true
+          },
+          {
+            "id": "A103",
+            "name": "夏季上新",
+            "status": "ACTIVE",
+            "remaining": 0,
+            "bookable": false
+          },
+          {
+            "id": "A104",
+            "name": "春季复盘",
+            "status": "ENDED",
+            "remaining": 0,
+            "bookable": false
+          }
+        ],
+        "total": 4
+      }
+    },
+    {
+      "id": "AC03",
+      "name": "过滤发生在分页前且总数一致",
+      "status": "PASS",
+      "actual": {
+        "first": {
+          "items": [
+            {
+              "id": "A102",
+              "name": "春季上新",
+              "status": "ACTIVE",
+              "remaining": 3,
+              "bookable": true
+            }
+          ],
+          "total": 1
+        },
+        "second": {
+          "items": [],
+          "total": 1
+        }
+      }
+    },
+    {
+      "id": "AC04",
+      "name": "关键词状态和可报名条件取交集",
+      "status": "PASS",
+      "actual": {
+        "spring": {
+          "items": [
+            {
+              "id": "A102",
+              "name": "春季上新",
+              "status": "ACTIVE",
+              "remaining": 3,
+              "bookable": true
+            }
+          ],
+          "total": 1
+        },
+        "summer": {
+          "items": [],
+          "total": 0
+        }
+      }
+    },
+    {
+      "id": "AC05",
+      "name": "默认列表保留原字段和计数",
+      "status": "PASS",
+      "actual": {
+        "legacy": [
+          200,
+          {
+            "items": [
+              {
+                "id": "A101",
+                "name": "春季活动",
+                "status": "DRAFT"
+              },
+              {
+                "id": "A102",
+                "name": "春季上新",
+                "status": "ACTIVE"
+              },
+              {
+                "id": "A103",
+                "name": "夏季上新",
+                "status": "ACTIVE"
+              },
+              {
+                "id": "A104",
+                "name": "春季复盘",
+                "status": "ENDED"
+              }
+            ],
+            "total": 4
+          }
+        ],
+        "single": [
+          200,
+          {
+            "id": "A102",
+            "capacity": 10,
+            "reserved": 7
+          }
+        ],
+        "without_identity": 401
+      }
+    },
+    {
+      "id": "AC06",
+      "name": "租户隔离、身份和新参数校验",
+      "status": "PASS",
+      "actual": {
+        "tenant_b": {
+          "items": [
+            {
+              "id": "B105",
+              "name": "春季跨区",
+              "status": "ACTIVE",
+              "remaining": 39,
+              "bookable": true
+            }
+          ],
+          "total": 1
+        },
+        "mixed_tenants": 404,
+        "without_identity": 401,
+        "invalid_queries": {
+          "bookable=maybe": 400,
+          "includeAvailability=": 400,
+          "bookable=true&bookable=false": 400
+        }
+      }
+    },
+    {
+      "id": "AC07",
+      "name": "依赖失败时受控报错且旧查询仍可用",
+      "status": "PASS",
+      "actual": {
+        "offline": {
+          "feature": [
+            503,
+            {
+              "error": {
+                "code": "DEPENDENCY_UNAVAILABLE",
+                "message": "Capacity temporarily unavailable"
+              }
+            }
+          ],
+          "legacy": [
+            200,
+            {
+              "items": [
+                {
+                  "id": "A101",
+                  "name": "春季活动",
+                  "status": "DRAFT"
+                },
+                {
+                  "id": "A102",
+                  "name": "春季上新",
+                  "status": "ACTIVE"
+                },
+                {
+                  "id": "A103",
+                  "name": "夏季上新",
+                  "status": "ACTIVE"
+                },
+                {
+                  "id": "A104",
+                  "name": "春季复盘",
+                  "status": "ENDED"
+                }
+              ],
+              "total": 4
+            }
+          ]
+        },
+        "malformed": {
+          "feature": [
+            503,
+            {
+              "error": {
+                "code": "DEPENDENCY_UNAVAILABLE",
+                "message": "Capacity temporarily unavailable"
+              }
+            }
+          ],
+          "legacy": [
+            200,
+            {
+              "items": [
+                {
+                  "id": "A101",
+                  "name": "春季活动",
+                  "status": "DRAFT"
+                },
+                {
+                  "id": "A102",
+                  "name": "春季上新",
+                  "status": "ACTIVE"
+                },
+                {
+                  "id": "A103",
+                  "name": "夏季上新",
+                  "status": "ACTIVE"
+                },
+                {
+                  "id": "A104",
+                  "name": "春季复盘",
+                  "status": "ENDED"
+                }
+              ],
+              "total": 4
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "browser": {
+    "id": "AC08",
+    "status": "PASS",
+    "actual": {
+      "browser": "157.0.8103.79",
+      "initial": {
+        "body": {
+          "items": [
+            {
+              "id": "A101",
+              "name": "春季活动",
+              "status": "DRAFT",
+              "remaining": 10,
+              "bookable": false
+            },
+            {
+              "id": "A102",
+              "name": "春季上新",
+              "status": "ACTIVE",
+              "remaining": 3,
+              "bookable": true
+            },
+            {
+              "id": "A103",
+              "name": "夏季上新",
+              "status": "ACTIVE",
+              "remaining": 0,
+              "bookable": false
+            },
+            {
+              "id": "A104",
+              "name": "春季复盘",
+              "status": "ENDED",
+              "remaining": 0,
+              "bookable": false
+            }
+          ],
+          "total": 4
+        },
+        "query": {
+          "page": "1",
+          "pageSize": "20",
+          "includeAvailability": "true"
+        }
+      },
+      "pending": {
+        "body": {
+          "items": [
+            {
+              "id": "A103",
+              "name": "夏季上新",
+              "status": "ACTIVE",
+              "remaining": 0,
+              "bookable": false
+            }
+          ],
+          "total": 4
+        },
+        "query": {
+          "page": "3",
+          "pageSize": "1",
+          "includeAvailability": "true"
+        }
+      },
+      "filtered": {
+        "body": {
+          "items": [
+            {
+              "id": "A102",
+              "name": "春季上新",
+              "status": "ACTIVE",
+              "remaining": 3,
+              "bookable": true
+            }
+          ],
+          "total": 1
+        },
+        "query": {
+          "page": "1",
+          "pageSize": "1",
+          "includeAvailability": "true",
+          "bookable": "true"
+        }
+      },
+      "combined": {
+        "body": {
+          "items": [
+            {
+              "id": "A102",
+              "name": "春季上新",
+              "status": "ACTIVE",
+              "remaining": 3,
+              "bookable": true
+            }
+          ],
+          "total": 1
+        },
+        "query": {
+          "page": "1",
+          "pageSize": "20",
+          "includeAvailability": "true",
+          "bookable": "true",
+          "keyword": "春季",
+          "status": "ACTIVE"
+        }
+      },
+      "restored": {
+        "body": {
+          "items": [
+            {
+              "id": "A101",
+              "name": "春季活动",
+              "status": "DRAFT",
+              "remaining": 10,
+              "bookable": false
+            },
+            {
+              "id": "A102",
+              "name": "春季上新",
+              "status": "ACTIVE",
+              "remaining": 3,
+              "bookable": true
+            },
+            {
+              "id": "A103",
+              "name": "夏季上新",
+              "status": "ACTIVE",
+              "remaining": 0,
+              "bookable": false
+            },
+            {
+              "id": "A104",
+              "name": "春季复盘",
+              "status": "ENDED",
+              "remaining": 0,
+              "bookable": false
+            }
+          ],
+          "total": 4
+        },
+        "query": {
+          "page": "1",
+          "pageSize": "20",
+          "includeAvailability": "true"
+        }
+      },
+      "errors": []
+    }
+  },
+  "human_decision": "pending"
+}

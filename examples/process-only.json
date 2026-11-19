@@ -1,0 +1,12 @@
+{
+  "name": "业务与数据项目协作",
+  "summary": "先梳理业务项目与数据项目之间的交付流程。",
+  "kind": "process",
+  "projects": [
+    {"name":"business","source":"/path/to/business","role":"业务流程与接口"},
+    {"name":"data","source":"/path/to/data","role":"数据模型与报表"}
+  ],
+  "relationships": [
+    {"from":"business","to":"data","description":"明确数据口径、更新时机和验收方式。"}
+  ]
+}

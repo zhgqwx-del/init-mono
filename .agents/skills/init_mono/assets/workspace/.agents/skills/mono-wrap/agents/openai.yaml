@@ -1,0 +1,4 @@
+interface:
+  display_name: "mono-wrap"
+  short_description: "整理跨仓评审发布恢复与交接记录并将复盘决定写回共享上下文"
+  default_prompt: "用 $mono-wrap 按任务目录中的规格推进当前跨项目需求。"

@@ -1,0 +1,9 @@
+/ops218-space/
+/.local/
+/dist/
+**/node_modules/
+**/__pycache__/
+*.pyc
+.DS_Store
+.env
+.env.*

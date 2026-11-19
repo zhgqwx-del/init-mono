@@ -1,0 +1,18 @@
+{
+  "id": "FEAT-301",
+  "title": "活动列表展示剩余名额并筛选可报名活动",
+  "goal": "运营在活动列表查看剩余名额，并在关键词和状态条件下仅查询可报名活动。",
+  "owner": "活动功能负责人",
+  "projects": ["portal-web", "campaign-api", "capacity-api"],
+  "contract": "capacity-api 新增 GET /internal/capacities?ids=A101,A102 返回每个活动的 remaining=max(0,capacity-reserved)。身份来自 Bearer demo token，批次含不可见 ID 时整体 404。campaign-api 的 includeAvailability=true 返回 remaining 和 bookable，只有 ACTIVE 且 remaining>0 才可报名。bookable=true 隐含获取名额，并在分页前筛选，total 为全部匹配数量。缺省新参数时保持旧响应结构且不调用名额服务。依赖不可用返回 503 DEPENDENCY_UNAVAILABLE。前端展示剩余名额并提供仅看可报名复选框，点查询才应用，翻页使用已提交条件。",
+  "acceptance": [
+    {"id":"AC01","check":"调用批量名额接口查询 A101 到 A104，再调既有单活动接口","expected":"剩余名额为 10、3、0、0，保留原单活动返回结构。"},
+    {"id":"AC02","check":"租户 A 查询活动并请求 includeAvailability=true","expected":"四条活动的剩余名额正确，只有 A102 的 bookable=true。"},
+    {"id":"AC03","check":"只查可报名且每页一条，分别读取第一页和第二页","expected":"第一页只得 A102 且 total=1，第二页为空且 total 仍为 1。"},
+    {"id":"AC04","check":"关键词春季加进行中加可报名，再用夏季加可报名查询","expected":"第一组只得 A102，第二组为空，过滤和计数取同一组条件。"},
+    {"id":"AC05","check":"省略所有新参数，另在名额服务不可用时复跑旧查询","expected":"仍返回 A101 到 A104、total=4，条目只有 id、name、status。"},
+    {"id":"AC06","check":"跨租户查询、无身份查询，发送非法或重复的新参数","expected":"租户列表和名额隔离，越权批次 404，无身份 401，非法参数 400。"},
+    {"id":"AC07","check":"停用名额服务或让其返回非法响应，再请求可报名列表","expected":"返回 503 DEPENDENCY_UNAVAILABLE，不返回猜测的名额与计数。"},
+    {"id":"AC08","check":"用真实浏览器操作名额列和可报名筛选，并修改未提交条件后翻页","expected":"页面显示正确名额，提交筛选后回第一页，未提交的修改不影响翻页，清除筛选恢复全部。"}
+  ]
+}

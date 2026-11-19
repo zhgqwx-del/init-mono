@@ -1,0 +1,4 @@
+interface:
+  display_name: "mono-verify"
+  short_description: "运行仓内测试和真实跨项目联调并保存当前版本可复核的验收证据"
+  default_prompt: "用 $mono-verify 按任务目录中的规格推进当前跨项目需求。"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "mono-start"
+  short_description: "根据同一份需求规格和系统关系推进跨仓实现并记录决定与交接"
+  default_prompt: "用 $mono-start 按任务目录中的规格推进当前跨项目需求。"

@@ -1,0 +1,7 @@
+[
+  {"id":"A101","tenant":"A","name":"春季活动","status":"DRAFT"},
+  {"id":"A102","tenant":"A","name":"春季上新","status":"ACTIVE"},
+  {"id":"A103","tenant":"A","name":"夏季上新","status":"ACTIVE"},
+  {"id":"A104","tenant":"A","name":"春季复盘","status":"ENDED"},
+  {"id":"B105","tenant":"B","name":"春季跨区","status":"ACTIVE"}
+]

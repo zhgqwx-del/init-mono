@@ -1,0 +1,49 @@
+{
+  "name": "双仓运营平台配置模板",
+  "summary": "前端活动列表通过开发代理访问活动 API，联合交付状态筛选。",
+  "owner": "需求负责人",
+  "kind": "repository",
+  "projects": [
+    {
+      "name": "ops-web",
+      "source": "/path/to/ops-web",
+      "mode": "worktree",
+      "ref": "main",
+      "role": "筛选交互、分页与开发代理",
+      "commands": {
+        "start": "python3 server.py --port 4173 --api-port 4174",
+        "test": "用工作区 verify.cjs 做真实浏览器验收"
+      }
+    },
+    {
+      "name": "ops-api",
+      "source": "/path/to/ops-api",
+      "mode": "worktree",
+      "ref": "main",
+      "role": "参数解析、租户过滤、排序分页和夹具",
+      "commands": {
+        "start": "python3 server.py --port 4174",
+        "test": "用工作区 verify.cjs 做接口和端到端验收"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "from": "ops-web",
+      "to": "ops-api",
+      "description": "GET /ops/api/v1/campaigns，同源代理附本地租户 A 身份。"
+    }
+  ],
+  "operations": {
+    "environment": "填写项目运行环境与依赖。",
+    "baseline": "用现有版本和测试确认旧链路可运行。",
+    "fixtures": "填写测试数据、账号与加载方式。",
+    "startup": "填写服务启动与联调顺序。",
+    "logs": "填写已获准的日志、配置和错误报告入口。",
+    "release": "按项目现有发布和审批流程执行。",
+    "rollback": "填写停止条件和恢复步骤。"
+  },
+  "context": [
+    "替换为团队现有业务规格、架构决定与接口说明。"
+  ]
+}

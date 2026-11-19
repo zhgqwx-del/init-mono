@@ -1,0 +1,4 @@
+interface:
+  display_name: "init_mono"
+  short_description: "接入已有项目与仓库并生成包含需求推进和联合验收技能的协作脚手架"
+  default_prompt: "用 $init_mono 根据我的项目与仓库信息创建跨项目协作空间，生成共享上下文、联调流程和验收技能。"

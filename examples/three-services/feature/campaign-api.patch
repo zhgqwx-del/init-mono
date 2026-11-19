@@ -1,0 +1,84 @@
+diff --git a/server.py b/server.py
+index 9fb65c8..49cb8fa 100644
+--- a/server.py
++++ b/server.py
+@@ -4,7 +4,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+ import json
+ from pathlib import Path
+ import re
+-from urllib.parse import parse_qs, urlsplit
++from urllib.error import HTTPError, URLError
++from urllib.parse import parse_qs, urlencode, urlsplit
++from urllib.request import Request, urlopen
+ 
+ API_PATH = "/ops/api/v1/campaigns"
+ STATUS_VALUES = {"DRAFT", "ACTIVE", "ENDED"}
+@@ -25,6 +27,38 @@ def positive_int(value, name, maximum):
+     return int(value)
+ 
+ 
++def optional_bool(query, name):
++    value = query_value(query, name, None)
++    if value is not None and value not in ("true", "false"):
++        raise ValueError(f"{name} must be true or false")
++    return value == "true"
++
++
++def remaining_capacity(port, token, ids):
++    if not ids:
++        return {}
++    request = Request(
++        f"http://127.0.0.1:{port}/internal/capacities?" + urlencode({"ids": ",".join(ids)}),
++        headers={"Authorization": token},
++    )
++    with urlopen(request, timeout=2) as response:
++        data = json.load(response)
++    items = data["items"]
++    if not isinstance(items, list):
++        raise ValueError("invalid capacity response")
++    remaining = {}
++    for item in items:
++        if not isinstance(item, dict) or not isinstance(item.get("id"), str):
++            raise ValueError("invalid capacity record")
++        value = item.get("remaining")
++        if type(value) is not int or value < 0 or item["id"] in remaining:
++            raise ValueError("invalid remaining capacity")
++        remaining[item["id"]] = value
++    if set(remaining) != set(ids):
++        raise ValueError("capacity response does not cover requested activities")
++    return remaining
++
++
+ def make_server(port, capacity_port):
+     fixtures = json.loads(Path(__file__).with_name("fixtures.json").read_text(encoding="utf-8"))
+     fixtures.sort(key=lambda campaign: campaign["id"])
+@@ -52,6 +86,8 @@ def make_server(port, capacity_port):
+ 
+             try:
+                 query = parse_qs(url.query, keep_blank_values=True, max_num_fields=32)
++                bookable_only = optional_bool(query, "bookable")
++                include_availability = optional_bool(query, "includeAvailability") or bookable_only
+                 status = query_value(query, "status", None)
+                 if status is not None and status not in STATUS_VALUES:
+                     raise ValueError("status must be DRAFT, ACTIVE, or ENDED")
+@@ -69,6 +105,20 @@ def make_server(port, capacity_port):
+                 and keyword in item["name"].casefold()
+                 and (status is None or item["status"] == status)
+             ]
++            if include_availability:
++                try:
++                    remaining = remaining_capacity(
++                        capacity_port, self.headers["Authorization"], [item["id"] for item in matches]
++                    )
++                except (OSError, HTTPError, URLError, ValueError, KeyError, TypeError):
++                    self.respond(503, {"error": {"code": "DEPENDENCY_UNAVAILABLE",
++                                                "message": "Capacity temporarily unavailable"}})
++                    return
++                for item in matches:
++                    item["remaining"] = remaining[item["id"]]
++                    item["bookable"] = item["status"] == "ACTIVE" and item["remaining"] > 0
++                if bookable_only:
++                    matches = [item for item in matches if item["bookable"]]
+             start = (page - 1) * page_size
+             self.respond(200, {"items": matches[start:start + page_size], "total": len(matches)})
+ 

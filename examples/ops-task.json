@@ -1,0 +1,47 @@
+{
+  "id": "OPS-218",
+  "title": "活动列表按状态筛选",
+  "goal": "在新的跨仓任务工作区复跑活动筛选的七项真实验收。",
+  "projects": [
+    "ops-web",
+    "ops-api"
+  ],
+  "contract": "status 可选，省略时兼容旧查询。两租户数据隔离，关键词与状态取交集，查询重置页码，翻页用已提交条件。",
+  "acceptance": [
+    {
+      "id": "AC01",
+      "check": "打开页面，或直调 API 省略 status",
+      "expected": "默认全部。A101、A102、A103、A104，total=4。浏览器请求省略 status。"
+    },
+    {
+      "id": "AC02",
+      "check": "每页 1 条，从全部第 2 页选择进行中并查询。改选草稿但不查询，直接再翻页",
+      "expected": "查询重置页码，首条 A102。翻页沿用已提交条件，第二条 A103，总数始终为 2。"
+    },
+    {
+      "id": "AC03",
+      "check": "查询春季＋进行中，再切回全部并查询",
+      "expected": "先得 A102、total=1。恢复全部后保留关键词，结果 A101、A102、A104，total=3，请求省略 status。"
+    },
+    {
+      "id": "AC04",
+      "check": "直调进行中第 1 页与第 2 页（每页 1 条），再查草稿和已结束",
+      "expected": "进行中按 ID 升序，total=2。草稿得 A101，已结束得 A104，total 各为 1。"
+    },
+    {
+      "id": "AC05",
+      "check": "查询夏季＋草稿",
+      "expected": "HTTP 200，items 为空，total=0，界面展示空态。"
+    },
+    {
+      "id": "AC06",
+      "check": "直调接口，分别传空值、UNKNOWN、重复 status",
+      "expected": "均返回 HTTP 400 与 error.code=INVALID_QUERY。"
+    },
+    {
+      "id": "AC07",
+      "check": "两个租户分别查春季＋进行中",
+      "expected": "A 只得 A102，total=1；B 只得 B105，total=1。无演示身份的请求返回 HTTP 401。"
+    }
+  ]
+}

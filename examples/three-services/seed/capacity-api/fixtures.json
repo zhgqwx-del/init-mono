@@ -1,0 +1,32 @@
+[
+  {
+    "id": "A101",
+    "tenant": "A",
+    "capacity": 10,
+    "reserved": 0
+  },
+  {
+    "id": "A102",
+    "tenant": "A",
+    "capacity": 10,
+    "reserved": 7
+  },
+  {
+    "id": "A103",
+    "tenant": "A",
+    "capacity": 5,
+    "reserved": 5
+  },
+  {
+    "id": "A104",
+    "tenant": "A",
+    "capacity": 20,
+    "reserved": 21
+  },
+  {
+    "id": "B105",
+    "tenant": "B",
+    "capacity": 40,
+    "reserved": 1
+  }
+]

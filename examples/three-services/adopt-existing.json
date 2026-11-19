@@ -1,0 +1,15 @@
+{
+  "name": "团队多服务协作",
+  "summary": "前端通过业务服务聚合第二个后端，一起交付业务 feature。",
+  "owner": "需求负责人",
+  "kind": "repository",
+  "projects": [
+    {"name":"frontend","source":"/path/to/frontend","mode":"worktree","ref":"main","role":"用户界面与请求"},
+    {"name":"backend-one","source":"/path/to/backend-one","mode":"worktree","ref":"main","role":"业务聚合与对外接口"},
+    {"name":"backend-two","source":"/path/to/backend-two","mode":"worktree","ref":"main","role":"共享领域数据与内部接口"}
+  ],
+  "relationships": [
+    {"from":"frontend","to":"backend-one","description":"填写实际 API 契约位置。"},
+    {"from":"backend-one","to":"backend-two","description":"填写实际调用方式、身份与兼容约定。"}
+  ]
+}
