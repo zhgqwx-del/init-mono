@@ -1,5 +1,7 @@
 # init_mono 脚手架仓库
 
+新会话先读 [项目认知与维护指南](docs/project-context.md)，再按任务读取对应源码与示例。项目结构、关键机制或维护约定变化时，同步更新该指南。
+
 .agents/skills/init_mono 是发布技能的源码，assets/workspace 包含生成的工作区技能与工具。examples/three-services 是完整的三仓 feature 演练，seed 保存旧代码，feature 保存参考补丁。
 
 - 改动生成器或模板后运行 python3 -B -m unittest discover -s tests -v。
