@@ -11,7 +11,10 @@ import sys
 ASSETS = Path(__file__).resolve().parent.parent / "assets" / "workspace"
 
 sys.path.insert(0, str(ASSETS / "scripts"))
-from mono_projects import attach, git, prepare_project, read_registry, text, write_project_index, write_registry
+from mono_projects import (
+    VERSION_RECORD, attach, git, prepare_project, read_registry, read_workspace_version,
+    release_version, text, write_json_atomic, write_lock, write_project_index, write_registry,
+)
 
 
 def array(obj, key, default=None):
@@ -90,18 +93,29 @@ def write_context(target, data):
     (target / "docs/mono/operations.md").write_text("\n".join(ops), encoding="utf-8")
 
 
+def bundle_version():
+    tag = (ASSETS.parent.parent / "VERSION").read_text(encoding="utf-8").strip()
+    release_version(tag)
+    return tag
+
+
 def initialize(config, target, dry_run):
     if target.exists() or target.is_symlink():
         raise ValueError(f"target already exists: {target}")
     data = prepare(config, target)
+    tag = bundle_version()
     if dry_run:
         print(json.dumps({"target": str(target), "kind": data["kind"],
+                          "scaffold_version": tag,
                           "projects": data["projects"], "writes": "shared context, 3 skills, task tools"},
                          ensure_ascii=False, indent=2))
         return
 
     target.mkdir(parents=True, exist_ok=False)
     shutil.copytree(ASSETS, target, dirs_exist_ok=True, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    write_json_atomic(target / VERSION_RECORD, {
+        "initialized_version": tag, "current_version": tag, "upgrades": [],
+    })
     write_registry(target, data)
     write_context(target, data)
     if data["kind"] == "repository":
@@ -122,7 +136,17 @@ def initialize(config, target, dry_run):
 
 
 def upgrade(target):
+    with write_lock(target / ".mono-registry.lock"):
+        upgrade_workspace(target)
+
+
+def upgrade_workspace(target):
     registry = read_registry(target)
+    tag = bundle_version()
+    record = read_workspace_version(target)
+    current = record["current_version"]
+    if current is not None and release_version(current) > release_version(tag):
+        raise ValueError(f"workspace already uses {current}; use that version or a newer bundle")
     versions = [json.loads(path.read_text(encoding="utf-8"))
                 for path in ASSETS.parent.glob("upgrade-v*.json")]
     files = [
@@ -150,7 +174,11 @@ def upgrade(target):
         path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, path)
     write_project_index(target, registry)
-    print(f"Workspace tools available at {target}. See docs/mono/stdd-sdd.md.")
+    if current != tag:
+        record["upgrades"].append({"from": current, "to": tag})
+        record["current_version"] = tag
+        write_json_atomic(target / VERSION_RECORD, record)
+    print(f"Workspace tools {tag} available at {target}. See docs/mono/stdd-sdd.md.")
 
 
 def main():

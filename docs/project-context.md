@@ -28,17 +28,18 @@ STDD/SDD 是可接入的仓内流程，普通 Git 仓库也能使用 Mono。工�
 | 入口 | 维护内容 |
 |---|---|
 | [.agents/skills/init_mono/SKILL.md](../.agents/skills/init_mono/SKILL.md) | 发布技能的入口与执行顺序；`agents/openai.yaml` 保存展示元数据 |
+| [.agents/skills/init_mono/VERSION](../.agents/skills/init_mono/VERSION) | 打包时嵌入 ZIP 的 Release 标签，初始化、升级和发布共同使用 |
 | [references/inputs.md](../.agents/skills/init_mono/references/inputs.md) | 工作区、项目、任务输入格式及命令约定 |
 | [scripts/init_mono.py](../.agents/skills/init_mono/scripts/init_mono.py) | 输入校验、初始化、系统说明生成和已有工作区升级 |
 | [模板根 scripts/mono_projects.py](../.agents/skills/init_mono/assets/workspace/scripts/mono_projects.py) | 项目接入、Git 基线、清单写入、STDD 入口发现；初始化器和工作区工具共同使用 |
-| [模板根 scripts/mono.py](../.agents/skills/init_mono/assets/workspace/scripts/mono.py) | `add`、`repos`、`bootstrap`、`baselines`、`new`、`status`、`stdd`、`run`、`check` 命令 |
+| [模板根 scripts/mono.py](../.agents/skills/init_mono/assets/workspace/scripts/mono.py) | `version`、`add`、`repos`、`bootstrap`、`baselines`、`new`、`status`、`stdd`、`run`、`check` 命令 |
 | [模板根 scripts/mono_stdd.py](../.agents/skills/init_mono/assets/workspace/scripts/mono_stdd.py) | 任务与本仓 STDD 变更的创建、关联和归档定位 |
 | [模板根 AGENTS.md](../.agents/skills/init_mono/assets/workspace/AGENTS.md)及其 `docs/mono/`、`.agents/skills/` | 生成工作区的规则、系统文档和三个日常技能 |
 | [assets/upgrade-v*.json](../.agents/skills/init_mono/assets/) | 升级时识别各已知旧版文件的摘要 |
 | [examples/](../examples/README.md) | 现有仓库配置、STDD 登录任务、纯流程输入和三仓演练 |
 | [tests/test_scaffold.py](../tests/test_scaffold.py) | 项目接入、任务隔离、升级保护及验收证据有效性的行为测试 |
 | [scripts/package_skill.py](../scripts/package_skill.py) | 将技能源码打包为根目录 `init_mono.zip`，或核对包与源码一致 |
-| [scripts/publish_skill_release.py](../scripts/publish_skill_release.py) | 比较主分支 ZIP 与最新 GitHub Release 附件，按需自动发布补丁版本 |
+| [scripts/publish_skill_release.py](../scripts/publish_skill_release.py) | 校验主分支 ZIP 的版本与最新 GitHub Release，按包内标签发布变更 |
 | [.github/workflows/check.yml](../.github/workflows/check.yml) | CI 的单元测试、包校验、完整三仓 HTTP/浏览器演练及通过检查后的主分支发布 |
 
 日常修改以技能源码和模板为入口，再重建 ZIP。根目录 `scripts/` 当前负责发布打包，生成工作区的日常工具位于模板根 `scripts/`，排查问题时注意区分。
@@ -97,6 +98,8 @@ STDD/SDD 是可接入的仓内流程，普通 Git 仓库也能使用 Mono。工�
 ### 已有工作区升级
 
 `init_mono.py --upgrade WORKSPACE` 只更新列入升级范围的工具和文档。目标内容与当前模板或已知旧版摘要相符时才替换；自定义 README 会保留，其他待替换文件存在自定义内容时要求先比对。任务、业务目录和手写系统说明继续保留。
+
+协调仓的 `mono-version.json` 保存初始化 Release、当前 Release 和按顺序追加的升级记录。`mono.py version` 输出该记录。升级成功后才更新版本，重复升级到同一版本不会追加历史。旧协调仓第一次升级会补记当前版本，未记录过的历史版本保留为未知。
 
 修改模板工具时，需要同时考虑新生成工作区和已有工作区的升级路径。新增可升级版本时记录该版本的旧文件摘要，并保留之前可识别的版本。
 

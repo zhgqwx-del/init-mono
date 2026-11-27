@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 
 STDD_SKILLS = ("stdd-start", "stdd-delivery", "stdd-test-report", "stdd-wrap")
+VERSION_RECORD = "mono-version.json"
 
 
 def git(root, *args):
@@ -199,9 +200,8 @@ def stdd_profile(checkout):
     }
 
 
-def write_registry(root, data):
-    path = root / "mono.json"
-    with tempfile.NamedTemporaryFile(mode="w", dir=root, delete=False, encoding="utf-8") as output:
+def write_json_atomic(path, data):
+    with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False, encoding="utf-8") as output:
         tmp = Path(output.name)
         try:
             json.dump(data, output, ensure_ascii=False, indent=2)
@@ -212,8 +212,34 @@ def write_registry(root, data):
             tmp.unlink(missing_ok=True)
 
 
+def write_registry(root, data):
+    write_json_atomic(root / "mono.json", data)
+
+
 def read_registry(root):
     return json.loads((root / "mono.json").read_text(encoding="utf-8"))
+
+
+def release_version(tag):
+    if not isinstance(tag, str) or not re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", tag):
+        raise ValueError(f"invalid scaffold Release tag: {tag!r}")
+    return tuple(int(part) for part in tag[1:].split("."))
+
+
+def read_workspace_version(root):
+    path = root / VERSION_RECORD
+    if path.is_symlink():
+        raise ValueError(f"review this customized path before using the version record: {path}")
+    if not path.exists():
+        return {"initialized_version": None, "current_version": None, "upgrades": []}
+    record = json.loads(path.read_text(encoding="utf-8"))
+    if (not isinstance(record, dict) or not isinstance(record.get("upgrades"), list)
+            or "initialized_version" not in record or "current_version" not in record):
+        raise ValueError(f"invalid scaffold version record: {path}")
+    for field in ("initialized_version", "current_version"):
+        if record[field] is not None:
+            release_version(record[field])
+    return record
 
 
 def write_project_index(root, data):

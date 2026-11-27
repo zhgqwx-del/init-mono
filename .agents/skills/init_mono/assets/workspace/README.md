@@ -2,6 +2,8 @@
 
 从 [系统关系](docs/mono/system.md) 了解已接入项目，从 [联调与发布](docs/mono/operations.md) 核对环境、数据、命令和访问范围。mono.json 是项目清单，repos/ 中是已接入的独立检出。Python 工具需要 Python 3.9 或以上版本以及 Git。
 
+运行 `python3 -B scripts/mono.py version` 查看协调仓初次初始化和当前使用的脚手架 Release，以及升级历史。记录在根目录的 `mono-version.json`，可随协调仓提交。旧版工作区第一次升级时补记当前 Release，无法追溯的原始版本显示为 `null`。
+
 ## 克隆协调仓后恢复项目
 
 从协调仓根目录运行：
