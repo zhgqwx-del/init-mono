@@ -8,6 +8,7 @@ import tempfile
 from urllib.parse import urlsplit
 
 
+AGENT_SKILL_DIRS = {"codex": ".agents/skills", "claude": ".claude/skills", "qoder": ".qoder/skills"}
 STDD_SKILLS = ("stdd-start", "stdd-delivery", "stdd-test-report", "stdd-wrap")
 VERSION_RECORD = "mono-version.json"
 
@@ -186,17 +187,22 @@ def attach(root, project):
 
 
 def stdd_profile(checkout):
+    skills_by_agent = {
+        agent: {path.parent.name: path.relative_to(checkout).as_posix()
+                for path in sorted((checkout / directory).glob("stdd-*/SKILL.md")) if path.is_file()}
+        for agent, directory in AGENT_SKILL_DIRS.items()
+    }
     skills = {}
     for name in STDD_SKILLS:
-        for directory in (".agents/skills", ".claude/skills", ".qoder/skills"):
-            path = f"{directory}/{name}/SKILL.md"
-            if (checkout / path).is_file():
-                skills[name] = path
+        for entries in skills_by_agent.values():
+            if name in entries:
+                skills[name] = entries[name]
                 break
     return {
         "project": "docs/stdd/project.md" if (checkout / "docs/stdd/project.md").is_file() else None,
         "scaffold": "scripts/new_change.py" if (checkout / "scripts/new_change.py").is_file() else None,
         "skills": skills,
+        "skills_by_agent": skills_by_agent,
     }
 
 

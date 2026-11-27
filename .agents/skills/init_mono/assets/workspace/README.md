@@ -16,7 +16,7 @@
 
 ## 从一项需求开始
 
-在协调仓根目录给 Agent 需求号、目标和验收判据，使用 $mono-start。Agent 会通过 `python3 -B scripts/mono.py baselines --sync` 获取候选仓的最新目标提交，快进干净的 detached `repos/` 检出，然后根据目标版本的代码确定影响范围。命令可指定候选项目，省略项目名时处理已登记的 Git 业务仓。有本地改动、正在使用本地分支、历史已分叉或 Git 阻止切换时，Agent 会从 Git 读取已获取的目标提交。Agent 为需要任务版本的仓库建工作树并使用分析时的 SHA。
+在协调仓根目录打开客户端，给 Agent 需求号、目标和验收判据，调用 `mono-start`。Agent 会通过 `python3 -B scripts/mono.py baselines --sync` 获取候选仓的最新目标提交，快进干净的 detached `repos/` 检出，然后根据目标版本的代码确定影响范围。命令可指定候选项目，省略项目名时处理已登记的 Git 业务仓。有本地改动、正在使用本地分支、历史已分叉或 Git 阻止切换时，Agent 会从 Git 读取已获取的目标提交。Agent 为需要任务版本的仓库建工作树并使用分析时的 SHA。
 
 也可以保存任务 JSON 并直接执行以下命令。
 
@@ -29,6 +29,16 @@
 `repos/` 是业务仓的长期接入入口。新任务的 Git worktree 从这里创建，独立克隆模式下还共享这里的 Git 数据。`baselines --sync` 会尝试移动接入检出。已有任务工作树保留各自版本，省略 `--worktrees` 创建的任务仍引用共享的接入检出。任务完成后的清理范围是已交付任务的工作树。
 
 ## 技能顺序
+
+默认安装以下三个客户端的入口，各自使用本目录下的 `<技能名>/SKILL.md`。
+
+| 客户端 | 技能目录 | 调用顺序 |
+|---|---|---|
+| Codex | `.agents/skills/` | `$mono-start` → `$mono-verify` → `$mono-wrap` |
+| Claude Code | `.claude/skills/` | `/mono-start` → `/mono-verify` → `/mono-wrap` |
+| Qoder | `.qoder/skills/` | `/mono-start` → `/mono-verify` → `/mono-wrap` |
+
+其他 Coding Agent 可以先读 `AGENTS.md`，再直接读取任一已安装目录中的 `SKILL.md`。Claude Code 的 `CLAUDE.md` 引用同一份 `AGENTS.md`。如果团队已有自定义 `CLAUDE.md`，可以在其中加入 `@AGENTS.md`。
 
 | 技能 | 输入 | 产出 |
 |---|---|---|
@@ -60,4 +70,4 @@
 
 在协作根运行 python3 -B scripts/mono.py add NAME SOURCE --role "职责"。SOURCE 可为 GitHub 或 GitLab 的 Git 地址、已有本地 Git 仓库、普通资料目录。运行 python3 -B scripts/mono.py repos 查看已接入项目。[仓库清单](docs/mono/projects.md) 会随登记更新。
 
-从 [STDD/SDD 对接说明](docs/mono/stdd-sdd.md) 获取完整示例。new 支持 --base 项目=Git引用 和 --branch 项目=分支名。status 任务号 显示任务工作树、实际 SHA 和仓内入口。需要生成 STDD 变更时，用 stdd 任务号 项目名 本仓变更ID --title "标题" 调用本仓模板，已有变更用原 ID 直接关联。
+从 [STDD/SDD 对接说明](docs/mono/stdd-sdd.md) 获取完整示例。new 支持 --base 项目=Git引用 和 --branch 项目=分支名。`status 任务号` 显示任务工作树、实际 SHA 和 `stdd.skills_by_agent` 中的仓内技能路径。需要生成 STDD 变更时，用 stdd 任务号 项目名 本仓变更ID --title "标题" 调用本仓模板，已有变更用原 ID 直接关联。

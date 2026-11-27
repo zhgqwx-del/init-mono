@@ -276,7 +276,7 @@ def create_task(input_path, use_worktrees, base_args=(), branch_args=()):
             print(f"Partial task preserved at {destination}; inspect projects.json and git worktree list.",
                   file=sys.stderr)
             raise
-    print(f"Created {destination}\nContinue with $mono-start.")
+    print(f"Created {destination}\nContinue with the mono-start skill.")
 
 
 def content_digest(root):
@@ -452,7 +452,7 @@ def main():
     baselines = commands.add_parser("baselines", help="resolve and fetch target commits for feature planning")
     baselines.add_argument("projects", nargs="*", metavar="PROJECT")
     baselines.add_argument("--sync", action="store_true", help="fast-forward clean detached base checkouts")
-    commands.add_parser("status", help="list task checkouts and their STDD entry points").add_argument("task")
+    commands.add_parser("status", help="list task checkouts and their STDD skills by client").add_argument("task")
     stdd = commands.add_parser("stdd", help="create or link a native STDD change for a project")
     stdd.add_argument("task")
     stdd.add_argument("project")

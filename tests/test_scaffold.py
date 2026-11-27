@@ -9,6 +9,9 @@ import tempfile
 import unittest
 
 INIT = Path(__file__).resolve().parents[1] / ".agents/skills/init_mono/scripts/init_mono.py"
+WORKSPACE_TEMPLATE = INIT.parents[1] / "assets/workspace"
+CLIENT_SKILL_DIRS = {"codex": ".agents/skills", "claude": ".claude/skills", "qoder": ".qoder/skills"}
+MONO_SKILLS = {"mono-start", "mono-verify", "mono-wrap"}
 
 
 def git(root, *args):
@@ -56,12 +59,21 @@ class ScaffoldTests(unittest.TestCase):
             self.assertNotEqual(process.returncode, 0, process.stdout)
         return process
 
-    def init(self, target=None, **updates):
+    def init(self, target=None, *, agent=None, **updates):
         self.config.update(updates)
         self.input.write_text(json.dumps(self.config))
         space = target or self.root / "space"
-        self.call(INIT, self.input, space)
+        self.call(INIT, self.input, space, *(("--agent", agent) if agent else ()))
         return space
+
+    def assert_client_skills(self, space, agent):
+        source = WORKSPACE_TEMPLATE / ".agents/skills"
+        destination = space / CLIENT_SKILL_DIRS[agent]
+        self.assertEqual({path.parent.name for path in destination.glob("*/SKILL.md")}, MONO_SKILLS)
+        for name in MONO_SKILLS:
+            self.assertEqual((destination / name / "SKILL.md").read_bytes(),
+                             (source / name / "SKILL.md").read_bytes())
+            self.assertEqual((destination / name / "agents/openai.yaml").is_file(), agent == "codex")
 
     def task_space(self):
         space = self.init()
@@ -93,7 +105,22 @@ class ScaffoldTests(unittest.TestCase):
         self.assertEqual(git(space, "rev-parse", "--show-toplevel"), str(space))
         self.assertEqual(git(space, "check-ignore", "repos/web/", "work/CAT-42/web/"),
                          "repos/web/\nwork/CAT-42/web/")
-        self.assertEqual(len(list((space / ".agents/skills").glob("*/SKILL.md"))), 3)
+        for agent in CLIENT_SKILL_DIRS:
+            self.assert_client_skills(space, agent)
+        self.assertEqual((space / "CLAUDE.md").read_text(), "@AGENTS.md\n")
+        for name in ("web", "api"):
+            for directory in CLIENT_SKILL_DIRS.values():
+                self.assertFalse((space / "work/CAT-42" / name / directory).exists())
+
+    def test_single_client_initialization_uses_its_own_skill_directory(self):
+        for agent in CLIENT_SKILL_DIRS:
+            with self.subTest(agent=agent):
+                space = self.init(self.root / agent, agent=agent, kind="process")
+                self.assert_client_skills(space, agent)
+                for other, directory in CLIENT_SKILL_DIRS.items():
+                    if other != agent:
+                        self.assertFalse((space / directory).exists())
+                self.assertEqual((space / "CLAUDE.md").is_file(), agent == "claude")
 
     def test_team_clones_start_separate_features_from_current_targets(self):
         web, api = self.sources
@@ -192,7 +219,10 @@ class ScaffoldTests(unittest.TestCase):
     def test_dry_run_and_input_errors_write_nothing(self):
         self.input.write_text(json.dumps(self.config))
         output = self.root / "preview"
-        self.call(INIT, self.input, output, "--dry-run")
+        plan = json.loads(self.call(INIT, self.input, output, "--dry-run").stdout)
+        self.assertEqual(plan["skill_directories"], CLIENT_SKILL_DIRS)
+        plan = json.loads(self.call(INIT, self.input, output, "--dry-run", "--agent", "qoder").stdout)
+        self.assertEqual(plan["skill_directories"], {"qoder": ".qoder/skills"})
         self.assertFalse(output.exists())
         self.config["projects"][1]["name"] = "web"
         self.input.write_text(json.dumps(self.config))
@@ -369,6 +399,69 @@ class ScaffoldTests(unittest.TestCase):
         self.call(cli, "new", self.task)
         self.call(cli, "stdd", "CAT-43", "web", "014-login", "--title", "Login", ok=False)
         self.assertFalse((space / "repos/web/changes").exists())
+
+    def test_status_lists_stdd_skills_per_client_with_legacy_paths(self):
+        space = self.task_space()
+        work = space / "work/CAT-42/web"
+        skills = {"codex": ("stdd-start", "stdd-review"), "claude": ("stdd-start", "stdd-delivery"),
+                  "qoder": ("stdd-start", "stdd-wrap")}
+        expected = {}
+        for agent, names in skills.items():
+            expected[agent] = {}
+            for name in names:
+                path = f"{CLIENT_SKILL_DIRS[agent]}/{name}/SKILL.md"
+                (work / path).parent.mkdir(parents=True)
+                (work / path).write_text(f"# {agent} {name}\n")
+                expected[agent][name] = path
+        ignored = work / ".qoder/skills/review/SKILL.md"
+        ignored.parent.mkdir()
+        ignored.write_text("# Other workflow\n")
+        rows = json.loads(self.call(space / "scripts/mono.py", "status", "CAT-42").stdout)
+        self.assertEqual(rows["web"]["stdd"]["skills_by_agent"], expected)
+        self.assertEqual(rows["web"]["stdd"]["skills"], {
+            "stdd-start": expected["codex"]["stdd-start"],
+            "stdd-delivery": expected["claude"]["stdd-delivery"],
+            "stdd-wrap": expected["qoder"]["stdd-wrap"],
+        })
+        self.assertEqual(rows["api"]["stdd"]["skills_by_agent"], {agent: {} for agent in CLIENT_SKILL_DIRS})
+
+    def test_upgrade_backfills_client_skills_and_preserves_custom_entries_and_evidence(self):
+        space = self.init(agent="codex")
+        cli = space / "scripts/mono.py"
+        self.call(cli, "new", self.task, "--worktrees")
+        shared_rules = space / "AGENTS.md"
+        shared_rules.write_text("# Team rules\n")
+        self.run_receipt(space, sys.executable, "-c", "assert 1 == 1")
+        claude_rules = space / "CLAUDE.md"
+        claude_rules.write_text("# Team Claude rules\n")
+        custom = space / ".claude/skills/mono-start/SKILL.md"
+        custom.parent.mkdir(parents=True)
+        custom.write_text("# Team Claude skill\n")
+
+        self.call(INIT, "--upgrade", space, "--agent", "claude")
+        for name in ("mono-verify", "mono-wrap"):
+            self.assertEqual((space / f".claude/skills/{name}/SKILL.md").read_bytes(),
+                             (space / f".agents/skills/{name}/SKILL.md").read_bytes())
+        self.assertFalse((space / ".qoder").exists())
+
+        self.call(INIT, "--upgrade", space)
+        self.call(INIT, "--upgrade", space)
+        self.assert_client_skills(space, "qoder")
+        self.assertEqual(claude_rules.read_text(), "# Team Claude rules\n")
+        self.assertEqual(custom.read_text(), "# Team Claude skill\n")
+        self.assertEqual(shared_rules.read_text(), "# Team rules\n")
+        self.call(cli, "check", "CAT-42")
+
+    def test_upgrade_leaves_linked_client_directories_in_place(self):
+        space = self.init(agent="codex", kind="process")
+        external = self.root / "custom-client"
+        external.mkdir()
+        (space / ".qoder").symlink_to(external, target_is_directory=True)
+        self.call(INIT, "--upgrade", space)
+        self.assertTrue((space / ".qoder").is_symlink())
+        self.assertEqual(list(external.iterdir()), [])
+        self.assert_client_skills(space, "claude")
+        self.assertEqual((space / "CLAUDE.md").read_text(), "@AGENTS.md\n")
 
     def test_upgrade_refuses_custom_scripts_before_writing(self):
         space = self.init()

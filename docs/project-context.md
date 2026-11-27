@@ -30,12 +30,12 @@ STDD/SDD 是可接入的仓内流程，普通 Git 仓库也能使用 Mono。工�
 | [.agents/skills/init_mono/SKILL.md](../.agents/skills/init_mono/SKILL.md) | 发布技能的入口与执行顺序；`agents/openai.yaml` 保存展示元数据 |
 | [.agents/skills/init_mono/VERSION](../.agents/skills/init_mono/VERSION) | 打包时嵌入 ZIP 的 Release 标签，初始化、升级和发布共同使用 |
 | [references/inputs.md](../.agents/skills/init_mono/references/inputs.md) | 工作区、项目、任务输入格式及命令约定 |
-| [scripts/init_mono.py](../.agents/skills/init_mono/scripts/init_mono.py) | 输入校验、初始化、系统说明生成和已有工作区升级 |
+| [scripts/init_mono.py](../.agents/skills/init_mono/scripts/init_mono.py) | 输入校验、初始化、系统说明生成、客户端技能分发和已有工作区升级 |
 | [模板根 scripts/mono_projects.py](../.agents/skills/init_mono/assets/workspace/scripts/mono_projects.py) | 项目接入、Git 基线、清单写入、STDD 入口发现；初始化器和工作区工具共同使用 |
 | [模板根 scripts/mono.py](../.agents/skills/init_mono/assets/workspace/scripts/mono.py) | `version`、`add`、`repos`、`bootstrap`、`baselines`、`new`、`status`、`stdd`、`run`、`check` 命令 |
 | [模板根 scripts/mono_stdd.py](../.agents/skills/init_mono/assets/workspace/scripts/mono_stdd.py) | 任务与本仓 STDD 变更的创建、关联和归档定位 |
 | [模板根 AGENTS.md](../.agents/skills/init_mono/assets/workspace/AGENTS.md)及其 `docs/mono/`、`.agents/skills/` | 生成工作区的规则、系统文档和三个日常技能 |
-| [assets/upgrade-v*.json](../.agents/skills/init_mono/assets/) | 升级时识别各已知旧版文件的摘要 |
+| [assets/upgrade-v*.json](../.agents/skills/init_mono/assets/) | 升级时识别各已知旧版文件的摘要，三端的技能正文沿用同一模板路径 |
 | [examples/](../examples/README.md) | 现有仓库配置、STDD 登录任务、纯流程输入和三仓演练 |
 | [tests/test_scaffold.py](../tests/test_scaffold.py) | 项目接入、任务隔离、升级保护及验收证据有效性的行为测试 |
 | [scripts/package_skill.py](../scripts/package_skill.py) | 将技能源码打包为根目录 `init_mono.zip`，或核对包与源码一致 |
@@ -67,7 +67,7 @@ STDD/SDD 是可接入的仓内流程，普通 Git 仓库也能使用 Mono。工�
 
 ### 任务与三个日常技能
 
-日常顺序为 `mono-start` → 各仓实现 → `mono-verify` → `mono-wrap`。技能说明分别位于模板根 `.agents/skills/` 下的同名目录。
+日常顺序为 `mono-start` → 各仓实现 → `mono-verify` → `mono-wrap`。技能正文统一维护在模板根 `.agents/skills/` 下的同名目录。初始化器默认分发到协调根的 `.agents/skills/`、`.claude/skills/` 和 `.qoder/skills/`，也可用 `--agent` 选择。Codex 布置 `agents/openai.yaml`，Claude Code 布置引用 `AGENTS.md` 的 `CLAUDE.md`。
 
 `mono.py new INPUT --worktrees` 为输入 `projects` 选中的项目创建 `work/任务号/项目`，默认分支为 `mono/任务号`。首先采用显式的 `--base 项目=引用`，否则查询项目的 `target_branch`、登记的 origin 分支或远端默认分支。需要时获取对应提交，将远端分支及确切 SHA 固定到任务记录。当远端刷新失败时停止创建任务，只在没有指定目标且没有远端的本地仓采用接入检出的 HEAD。
 
@@ -82,7 +82,7 @@ STDD/SDD 是可接入的仓内流程，普通 Git 仓库也能使用 Mono。工�
 | `verification.json`、`evidence/` | 验收状态、实际结果、人工判断和运行回执 |
 | `delivery.md` | 候选提交或 PR、发布恢复安排和复盘 |
 
-`status` 报告实际工作树、分支、SHA 和发现的仓内技能。`stdd` 只在登记的 feature 工作树及预期分支操作，调用该仓自己的 `scripts/new_change.py` 创建变更，或关联已有变更；归档后仍可定位。具体规则见[生成工作区的 STDD/SDD 对接说明](../.agents/skills/init_mono/assets/workspace/docs/mono/stdd-sdd.md)。
+`status` 报告实际工作树、分支与 SHA。`stdd.skills_by_agent` 按客户端列出各工作树里的 `stdd-*` 技能，原有 `stdd.skills` 字段保留常用技能的单一路径。`stdd` 只在登记的 feature 工作树及预期分支操作，调用该仓自己的 `scripts/new_change.py` 创建变更，或关联已有变更；归档后仍可定位。具体规则见[生成工作区的 STDD/SDD 对接说明](../.agents/skills/init_mono/assets/workspace/docs/mono/stdd-sdd.md)。
 
 ### 联合验收与证据有效性
 
@@ -97,7 +97,7 @@ STDD/SDD 是可接入的仓内流程，普通 Git 仓库也能使用 Mono。工�
 
 ### 已有工作区升级
 
-`init_mono.py --upgrade WORKSPACE` 只更新列入升级范围的工具和文档。目标内容与当前模板或已知旧版摘要相符时才替换；自定义 README 会保留，其他待替换文件存在自定义内容时要求先比对。任务、业务目录和手写系统说明继续保留。
+`init_mono.py --upgrade WORKSPACE` 更新列入升级范围的工具和文档，默认补齐协调根的三套技能入口。`--agent` 可限定本次技能分发范围。旧文件与已知版本匹配时可以更新，自定义 README、`CLAUDE.md`、Claude Code 或 Qoder 技能以及 Codex 展示元数据会保留。其余待替换文件有自定义内容时，升级会提示先比对。协调根 `AGENTS.md`、任务、业务目录和手写系统说明继续保留，已有验证回执仍按原规格核对。
 
 协调仓的 `mono-version.json` 保存初始化 Release、当前 Release 和按顺序追加的升级记录。`mono.py version` 输出该记录。升级成功后才更新版本，重复升级到同一版本不会追加历史。旧协调仓第一次升级会补记当前版本，未记录过的历史版本保留为未知。
 

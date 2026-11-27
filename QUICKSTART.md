@@ -33,6 +33,8 @@ python3 -B "$mono_script" "$mono_config" "$mono_target"
 
 kind 选 repository 会初始化 Git 协调仓库，选 directory 生成普通目录，选 process 只登记引用和流程。脚本把启动、测试与权限约定写入说明，具体命令由 Agent 按实际环境执行。[输入字段与模式](.agents/skills/init_mono/references/inputs.md)
 
+协调根默认安装 Codex、Claude Code 和 Qoder 的三个日常技能。只需一个客户端时，在初始化命令后加 `--agent codex`、`--agent claude` 或 `--agent qoder`。
+
 ## 二 发布并克隆团队协调仓
 
 初始化团队协调仓时选择 `kind: repository`。每个业务仓的 `source` 可填团队有权限访问的 Git URL，也可填本地仓库路径以使用 worktree。用本地 worktree 时，脚手架会从业务仓已配置的 `origin` 取得远端地址并将其记为 `clone_source`。如果 `origin` 缺失、指向本机，或是队友无法访问的个人 fork，可以显式填写团队的共享地址。各仓登记的基线提交需要能从对应远端克隆得到。
@@ -51,12 +53,18 @@ python3 -B scripts/mono.py bootstrap
 
 在 Agent 中打开协调仓根目录。先看 AGENTS.md、mono.json、docs/mono/system.md 和 operations.md，核对调用关系、联调配置及测试数据来源。
 
-> 用 $mono-start 开始 FEAT-101，给活动列表新增筛选。先更新候选仓的目标版本，再根据代码判断影响范围，只为需要任务版本的仓库建立工作树。
+| 客户端 | 协调根技能目录 | 日常调用 |
+|---|---|---|
+| Codex | `.agents/skills/` | `$mono-start`、`$mono-verify`、`$mono-wrap` |
+| Claude Code | `.claude/skills/` | `/mono-start`、`/mono-verify`、`/mono-wrap` |
+| Qoder | `.qoder/skills/` | `/mono-start`、`/mono-verify`、`/mono-wrap` |
 
-1. 用 $mono-start 写共同契约和验收场景，为参与仓建立 work/需求号 下的工作树。各业务仓有自己的分支和合入目标。
-2. 在对应工作树按仓内 STDD 技能开发。scripts/mono.py stdd 可调用该仓的原生模板创建变更，也可把已有变更关联到同一 Mono 工单。
-3. 用 $mono-verify 跑仓内检查，再跑真实跨服务测试，记录实际受测版本和结果。
-4. 用 $mono-wrap 对齐各仓候选提交或 PR、发布顺序和后续接手信息。评审、权限和发布沿用各仓安排。
+> 用 mono-start 开始 FEAT-101，给活动列表新增筛选。先更新候选仓的目标版本，再根据代码判断影响范围，只为需要任务版本的仓库建立工作树。
+
+1. 用 `mono-start` 写共同契约和验收场景，为参与仓建立 `work/需求号` 下的工作树。各业务仓有自己的分支和合入目标。
+2. 用 `python3 -B scripts/mono.py status FEAT-101` 查看 `stdd.skills_by_agent` 中各客户端的仓内技能路径，在对应工作树按本仓流程开发。`scripts/mono.py stdd` 可以调用业务仓模板创建变更，也可关联已有变更。
+3. 用 `mono-verify` 跑仓内检查，再跑真实跨服务测试，记录实际受测版本和结果。
+4. 用 `mono-wrap` 对齐各仓候选提交或 PR、发布顺序和后续接手信息。评审、权限和发布沿用各仓安排。
 
 第一项任务可以用 [FEAT-LOGIN 输入与操作示例](examples/stdd-feature/README.md)。手头暂时没有业务仓时，可以先用 [三仓演练](examples/three-services/README.md)创建并跑通一组本地仓库。
 
@@ -98,6 +106,8 @@ git -C "$mono_workspace" diff
 
 在协调仓根目录运行 `python3 -B scripts/mono.py version`，查看初始化时的 Release、当前 Release 和升级历史。新建或升级成功后会将记录写入 `mono-version.json`，可随协调仓提交。早期协调仓首次升级会补记本次安装版本，无法追溯的初始版本会显示为 `null`。
 
-升级会更新列入升级范围的工具和技能，并重新生成项目索引 `docs/mono/projects.md`。它会保留 `mono.json`、已有任务、业务仓检出、任务工作树、手写系统说明和自定义 README。遇到团队改过的待升级脚本或技能时，升级器会在替换文件前停止，并提示待比对的路径。
+升级会更新工具、重新生成项目索引 `docs/mono/projects.md`，并为协调根补齐三个客户端的技能入口。要指定单个客户端，可在命令后加 `--agent codex`、`--agent claude` 或 `--agent qoder`。已有 `mono.json`、任务、业务仓检出、任务工作树、共享规则和手写系统说明会保留。
+
+升级会保留自定义 README、`CLAUDE.md` 及自定义 Claude Code 和 Qoder 技能。如果团队维护自己的 `CLAUDE.md`，可在其中添加 `@AGENTS.md` 来加载共享规则。受管理的脚本或 Codex 技能正文有冲突时，升级器会在写入前提示待比对的路径。
 
 团队维护者审阅差异后，把升级改动提交并合入协调仓的共享分支。其他成员拉取协调仓更新即可使用新版工具。如果是为旧协调仓首次接入 `bootstrap`，且 `mono.json` 只记录了创建者的本地路径，维护者在共享清单中一次性补齐队友可访问的 `clone_source`，确认已登记的基线提交能从该远端获取，再把清单随升级一起提交。[项目认知与维护指南](docs/project-context.md)

@@ -19,6 +19,8 @@
 
 初始化一次，之后按 feature 选择用到的仓库。GitHub/GitLab 地址独立 clone，本地 Git 根目录通过 worktree 接入，普通资料目录登记为参考入口。要追加项目，使用 scripts/mono.py add。完整的输入格式见[初始化说明](.agents/skills/init_mono/references/inputs.md)。
 
+协调根默认给 Codex、Claude Code 和 Qoder 安装 `mono-start`、`mono-verify`、`mono-wrap`。已有协调仓可以通过 `--upgrade` 补齐入口。调用方式见[团队快速上手](QUICKSTART.md#三-从协作根启动一个需求)。
+
 ## 选一个示例
 
 - [现有 STDD 仓库接入与登录需求](examples/stdd-feature/README.md)适合手头已有前后端项目，想用一张 Mono 工单关联各仓 STDD 变更。

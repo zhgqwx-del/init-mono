@@ -12,9 +12,11 @@ ASSETS = Path(__file__).resolve().parent.parent / "assets" / "workspace"
 
 sys.path.insert(0, str(ASSETS / "scripts"))
 from mono_projects import (
-    VERSION_RECORD, attach, git, prepare_project, read_registry, read_workspace_version,
+    AGENT_SKILL_DIRS, VERSION_RECORD, attach, git, prepare_project, read_registry, read_workspace_version,
     release_version, text, write_json_atomic, write_lock, write_project_index, write_registry,
 )
+
+MONO_SKILLS = ("mono-start", "mono-verify", "mono-wrap")
 
 
 def array(obj, key, default=None):
@@ -99,7 +101,27 @@ def bundle_version():
     return tag
 
 
-def initialize(config, target, dry_run):
+def workspace_skill_files(agents):
+    files = {}
+    for agent in agents:
+        for name in MONO_SKILLS:
+            source = ASSETS / AGENT_SKILL_DIRS["codex"] / name
+            destination = f"{AGENT_SKILL_DIRS[agent]}/{name}"
+            files[f"{destination}/SKILL.md"] = source / "SKILL.md"
+            if agent == "codex":
+                files[f"{destination}/agents/openai.yaml"] = source / "agents/openai.yaml"
+    if "claude" in agents:
+        files["CLAUDE.md"] = ASSETS / "CLAUDE.md"
+    return files
+
+
+def copy_files(actions):
+    for source, path in actions:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, path)
+
+
+def initialize(config, target, dry_run, agents):
     if target.exists() or target.is_symlink():
         raise ValueError(f"target already exists: {target}")
     data = prepare(config, target)
@@ -107,12 +129,15 @@ def initialize(config, target, dry_run):
     if dry_run:
         print(json.dumps({"target": str(target), "kind": data["kind"],
                           "scaffold_version": tag,
+                          "skill_directories": {agent: AGENT_SKILL_DIRS[agent] for agent in agents},
                           "projects": data["projects"], "writes": "shared context, 3 skills, task tools"},
                          ensure_ascii=False, indent=2))
         return
 
     target.mkdir(parents=True, exist_ok=False)
-    shutil.copytree(ASSETS, target, dirs_exist_ok=True, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    shutil.copytree(ASSETS, target, dirs_exist_ok=True,
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".agents", "CLAUDE.md"))
+    copy_files((source, target / name) for name, source in workspace_skill_files(agents).items())
     write_json_atomic(target / VERSION_RECORD, {
         "initialized_version": tag, "current_version": tag, "upgrades": [],
     })
@@ -132,15 +157,15 @@ def initialize(config, target, dry_run):
         raise
     write_context(target, data)
     write_project_index(target, data)
-    print(f"Created {target}\nRead README.md, then use $mono-start for the first requirement.")
+    print(f"Created {target}\nRead README.md for your agent's mono-start command.")
 
 
-def upgrade(target):
+def upgrade(target, agents):
     with write_lock(target / ".mono-registry.lock"):
-        upgrade_workspace(target)
+        upgrade_workspace(target, agents)
 
 
-def upgrade_workspace(target):
+def upgrade_workspace(target, agents):
     registry = read_registry(target)
     tag = bundle_version()
     record = read_workspace_version(target)
@@ -149,30 +174,39 @@ def upgrade_workspace(target):
         raise ValueError(f"workspace already uses {current}; use that version or a newer bundle")
     versions = [json.loads(path.read_text(encoding="utf-8"))
                 for path in ASSETS.parent.glob("upgrade-v*.json")]
-    files = [
+    files = {name: ASSETS / name for name in (
         "scripts/mono.py", "scripts/mono_projects.py", "scripts/mono_stdd.py", "README.md",
         "docs/mono/stdd-sdd.md",
-        *(f".agents/skills/{name}/SKILL.md" for name in ("mono-start", "mono-verify", "mono-wrap")),
-    ]
+    )}
+    skill_files = workspace_skill_files(agents)
+    files.update(skill_files)
+    codex_skills = {f"{AGENT_SKILL_DIRS['codex']}/{name}/SKILL.md" for name in MONO_SKILLS}
+    preserve_custom = {"README.md"} | (skill_files.keys() - codex_skills)
     actions = []
-    for name in files:
-        source, path = ASSETS / name, target / name
-        if not path.exists() and not path.is_symlink():
-            actions.append((source, path))
-        elif path.is_symlink() or not path.is_file():
+    for name, source in files.items():
+        path = target / name
+        parents = (target / parent for parent in reversed(Path(name).parents))
+        blocked_parent = any(parent.is_symlink() or (parent.exists() and not parent.is_dir())
+                             for parent in parents)
+        if blocked_parent or path.is_symlink() or (path.exists() and not path.is_file()):
+            if name in preserve_custom:
+                print(f"Retaining customized path: {path}")
+                continue
             raise ValueError(f"review this customized path before upgrading: {path}")
-        elif path.read_bytes() != source.read_bytes():
-            digest = hashlib.sha256(path.read_bytes()).hexdigest()
-            if not any(digest == hashes.get(name) for hashes in versions):
-                # A team's README can be retained without blocking the tool upgrade.
-                if name == "README.md":
-                    print(f"Retaining customized README: {path}")
+        if not path.exists():
+            actions.append((source, path))
+            continue
+        content = path.read_bytes()
+        if content != source.read_bytes():
+            digest = hashlib.sha256(content).hexdigest()
+            source_name = source.relative_to(ASSETS).as_posix()
+            if not any(digest == hashes.get(source_name) for hashes in versions):
+                if name in preserve_custom:
+                    print(f"Retaining customized file: {path}")
                     continue
                 raise ValueError(f"review this customized file before upgrading: {path}")
             actions.append((source, path))
-    for source, path in actions:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, path)
+    copy_files(actions)
     write_project_index(target, registry)
     if current != tag:
         record["upgrades"].append({"from": current, "to": tag})
@@ -187,17 +221,20 @@ def main():
     parser.add_argument("target", type=Path, nargs="?")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--upgrade", action="store_true", help="update tools in a generated workspace")
+    parser.add_argument("--agent", choices=("all", *AGENT_SKILL_DIRS), default="all",
+                        help="client skill layout to install (default: all)")
     args = parser.parse_args()
+    agents = tuple(AGENT_SKILL_DIRS) if args.agent == "all" else (args.agent,)
     try:
         if args.upgrade:
             if args.target or args.dry_run:
-                parser.error("use --upgrade WORKSPACE")
-            upgrade(args.input.resolve())
+                parser.error("use --upgrade WORKSPACE [--agent AGENT]")
+            upgrade(args.input.resolve(), agents)
             return
         if args.target is None:
             parser.error("provide INPUT and TARGET")
         target = args.target.parent.resolve() / args.target.name
-        initialize(args.input.resolve(), target, args.dry_run)
+        initialize(args.input.resolve(), target, args.dry_run, agents)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"{error}\n")
 
