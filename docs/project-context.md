@@ -38,7 +38,8 @@ STDD/SDD 是可接入的仓内流程，普通 Git 仓库也能使用 Mono。工�
 | [examples/](../examples/README.md) | 现有仓库配置、STDD 登录任务、纯流程输入和三仓演练 |
 | [tests/test_scaffold.py](../tests/test_scaffold.py) | 项目接入、任务隔离、升级保护及验收证据有效性的行为测试 |
 | [scripts/package_skill.py](../scripts/package_skill.py) | 将技能源码打包为根目录 `init_mono.zip`，或核对包与源码一致 |
-| [.github/workflows/check.yml](../.github/workflows/check.yml) | CI 的单元测试、包校验及完整三仓 HTTP/浏览器演练 |
+| [scripts/publish_skill_release.py](../scripts/publish_skill_release.py) | 比较主分支 ZIP 与最新 GitHub Release 附件，按需自动发布补丁版本 |
+| [.github/workflows/check.yml](../.github/workflows/check.yml) | CI 的单元测试、包校验、完整三仓 HTTP/浏览器演练及通过检查后的主分支发布 |
 
 日常修改以技能源码和模板为入口，再重建 ZIP。根目录 `scripts/` 当前负责发布打包，生成工作区的日常工具位于模板根 `scripts/`，排查问题时注意区分。
 
