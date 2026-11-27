@@ -31,6 +31,8 @@ name、summary、projects 必填，每项目必填 name、source。最低提供�
 
 命令为 python3 scripts/init_mono.py INPUT TARGET。TARGET 使用新目录，--dry-run 检查输入与本地基线并展示计划。中途 Git 接入失败时保留已生成的上下文、mono.json 和检出，按输出路径检查实际状态后继续处理。
 
+`--agent` 默认是 `all`，为 Codex、Claude Code 和 Qoder 安装协调根的 `mono-start`、`mono-verify` 和 `mono-wrap`。只需一个客户端时可用 `--agent codex`、`--agent claude` 或 `--agent qoder`。预览结果用 `skill_directories` 显示计划安装的目录。
+
 ## 需求输入
 
 初始化后使用生成工作区的 mono-start。结构化任务输入如下。
@@ -56,6 +58,6 @@ id、title、goal 必填。owner 默认使用协作负责人。projects 默认�
 
 团队成员克隆已有协调仓后，在协作根目录运行 `python3 -B scripts/mono.py bootstrap [PROJECT ...]` 恢复已登记的业务仓。旧清单缺少共享地址时，可用 `--source PROJECT=GIT_URL` 临时指定，或把 `clone_source` 补进共享清单。
 
-旧工作区从最新版技能运行 python3 -B scripts/init_mono.py --upgrade WORKSPACE。工具检查待替换文件与已知旧版一致，保留业务目录、任务与手写系统说明。若检测到本地改过的技能或脚本，请先比对再合并。
+旧工作区从最新版技能运行 `python3 -B scripts/init_mono.py --upgrade WORKSPACE`。默认补齐三个客户端的入口，可用 `--agent` 指定本次仅安装或更新某个客户端的技能入口。升级保留业务目录、任务、共享规则和手写系统说明。遇到自定义 `CLAUDE.md`、Claude Code 或 Qoder 技能时保留原文件。若受管理的脚本或 Codex 技能正文有冲突，请先比对再合并。
 
 日常需求可传多组 --base PROJECT=REF 和 --branch PROJECT=BRANCH。显式 --base 优先于远端目标分支，需要在对应 Git 仓库中可解析。接入 STDD/SDD 后，打开生成工作区的 docs/mono/stdd-sdd.md。
