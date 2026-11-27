@@ -48,3 +48,19 @@ jobs:
         run: |
           python3 -B examples/three-services/demo.py browser "$RUNNER_TEMP/mono-example"
           python3 -B examples/three-services/demo.py check "$RUNNER_TEMP/mono-example"
+  publish-skill:
+    needs: test
+    if: github.repository == 'zhgqwx-del/init-mono' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    concurrency:
+      group: publish-init-mono
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - name: Synchronize the latest Release ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -B scripts/publish_skill_release.py "$GITHUB_REPOSITORY" "$GITHUB_SHA"

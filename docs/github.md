@@ -12,7 +12,7 @@ python3 -B scripts/package_skill.py --check
 git status --short
 ~~~
 
-.github/workflows/check.yml 会在后续 GitHub 推送和 PR 上复跑脚手架测试及三仓示例。仓库需要公共或私有由创建者选择。
+.github/workflows/check.yml 在 GitHub 推送和 PR 上复跑脚手架测试、打包校验及三仓演练，包括 HTTP 和浏览器验收。
 
 ## 创建远端并推送
 
@@ -24,11 +24,19 @@ gh repo create OWNER/REPO --public --source . --remote origin --push
 
 ## 发布技能 ZIP
 
-版本号按实际发布填写，发布分支的 workflow 通过后上传对应提交的 ZIP。读者可从 [Releases](https://github.com/zhgqwx-del/init-mono/releases) 下载该版本，首次使用见 [团队快速上手](../QUICKSTART.md)。
+修改技能后，运行 `python3 -B scripts/package_skill.py` 重建根目录的 `init_mono.zip`，把源码和 ZIP 放在同一个提交里。合入 `main` 后，CI 通过才会比较该 ZIP 与最新 Release 的 SHA-256。如果内容不同，工作流会为通过检查的提交发布下一个补丁版本，上传当次提交的 ZIP，并验证新 Release 的附件。内容相同时跳过发布。README 和快速上手使用同一个 latest 下载地址，发布完成后自动指向新包。
+
+检查失败或尚未结束时，latest 下载地址仍提供上一个通过检查的版本。发布失败可在 GitHub Actions 中查看发布步骤并重跑。历史版本的下载附件会保留在各自的 Release。
+
+需要指定版本号时，可从已通过 CI 的 `main` 提交手动发布。以下命令从该提交的检出目录运行，替换版本号及发布说明路径。
 
 ~~~sh
-python3 -B scripts/package_skill.py
-gh release create v0.1.0 init_mono.zip \
-  --title "init_mono v0.1.0" \
-  --notes-file docs/release-notes.md
+python3 -B scripts/package_skill.py --check
+git rev-parse HEAD
+gh release create v0.3.0 init_mono.zip \
+  --target "<通过 CI 的提交 SHA>" \
+  --title "init_mono v0.3.0" \
+  --notes-file /path/to/release-notes.md --latest
 ~~~
+
+发布包见 [Releases](https://github.com/zhgqwx-del/init-mono/releases)。使用方法见 [团队快速上手](../QUICKSTART.md)。
