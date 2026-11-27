@@ -2,13 +2,29 @@
 
 从 [系统关系](docs/mono/system.md) 了解已接入项目，从 [联调与发布](docs/mono/operations.md) 核对环境、数据、命令和访问范围。mono.json 是项目清单，repos/ 中是已接入的独立检出。Python 工具需要 Python 3.9 或以上版本以及 Git。
 
+## 克隆协调仓后恢复项目
+
+从协调仓根目录运行：
+
+    python3 -B scripts/mono.py bootstrap
+
+默认恢复 mono.json 中所有登记了基线的 Git 业务仓，按各仓的 `base_sha` 检出到 `repos/<项目>`。首次接手可直接拉齐全部业务仓，再按任务选开发范围。指定项目名时只恢复所选项目，例如 `bootstrap frontend auth-api`。重跑会保留已有检出。各成员使用自己的 Git 凭据和业务仓权限。清单的克隆入口来自 `clone_source` 或 Git URL 形式的 `source`。旧清单可用 `--source 项目=Git_URL` 临时指定克隆入口。
+
+每位成员用自己的任务号创建 feature。协调仓提交和共享 `tasks/<任务号>/` 中的契约与证据，业务改动在各自的任务工作树提交并推送到各业务远端。根目录的 `.gitignore` 已忽略 `repos/` 和 `work/`。
+
 ## 从一项需求开始
 
-给 Agent 需求号、目标、涉及项目和验收判据，使用 $mono-start。也可以保存任务 JSON 并执行以下命令。
+在协调仓根目录给 Agent 需求号、目标和验收判据，使用 $mono-start。Agent 会通过 `python3 -B scripts/mono.py baselines --sync` 获取候选仓的最新目标提交，快进干净的 detached `repos/` 检出，然后根据目标版本的代码确定影响范围。命令可指定候选项目，省略项目名时处理已登记的 Git 业务仓。有本地改动、正在使用本地分支、历史已分叉或 Git 阻止切换时，Agent 会从 Git 读取已获取的目标提交。Agent 为需要任务版本的仓库建工作树并使用分析时的 SHA。
+
+也可以保存任务 JSON 并直接执行以下命令。
 
     python3 scripts/mono.py new /path/to/task.json --worktrees
 
-任务输入包含 id、title、goal，可选 owner、projects、contract 和 acceptance。projects 引用 mono.json 中的项目名，acceptance 每项有 id、check、expected。验收规则未提供时创建待补的草稿。--worktrees 会在 work/需求号/ 下为已检出的项目创建独立任务分支，供 Agent 改动。暂未检出的项目通过原位置和说明接入。省略 --worktrees 时任务使用原有检出。
+任务输入包含 id、title、goal，可选 owner、projects、contract 和 acceptance。显式填写 projects 可限定参与仓，省略时采用清单中的所有项目。acceptance 每项有 id、check、expected，未提供验收规则时会创建待补的草稿。--worktrees 在 work/需求号/ 下为参与的 Git 项目建立独立任务工作树，省略时任务使用原有检出。
+
+普通新任务会查询参与仓的远端目标分支，并获取所需提交。可在 mono.json 为项目设置 `target_branch`，如 `develop`。省略时沿用已登记的 `origin/<分支>`，其余使用远端默认分支。远端访问或目标分支有问题时会停止创建。只在本地运行且没有远端的项目使用接入检出的 HEAD。用 `--base 项目=引用` 可以固定到本地已有提交，适用于复现和离线开发。
+
+`repos/` 是业务仓的长期接入入口。新任务的 Git worktree 从这里创建，独立克隆模式下还共享这里的 Git 数据。`baselines --sync` 会尝试移动接入检出。已有任务工作树保留各自版本，省略 `--worktrees` 创建的任务仍引用共享的接入检出。任务完成后的清理范围是已交付任务的工作树。
 
 ## 技能顺序
 

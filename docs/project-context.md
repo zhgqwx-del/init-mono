@@ -31,10 +31,10 @@ STDD/SDD 是可接入的仓内流程，普通 Git 仓库也能使用 Mono。工�
 | [references/inputs.md](../.agents/skills/init_mono/references/inputs.md) | 工作区、项目、任务输入格式及命令约定 |
 | [scripts/init_mono.py](../.agents/skills/init_mono/scripts/init_mono.py) | 输入校验、初始化、系统说明生成和已有工作区升级 |
 | [模板根 scripts/mono_projects.py](../.agents/skills/init_mono/assets/workspace/scripts/mono_projects.py) | 项目接入、Git 基线、清单写入、STDD 入口发现；初始化器和工作区工具共同使用 |
-| [模板根 scripts/mono.py](../.agents/skills/init_mono/assets/workspace/scripts/mono.py) | `add`、`repos`、`new`、`status`、`stdd`、`run`、`check` 命令 |
+| [模板根 scripts/mono.py](../.agents/skills/init_mono/assets/workspace/scripts/mono.py) | `add`、`repos`、`bootstrap`、`baselines`、`new`、`status`、`stdd`、`run`、`check` 命令 |
 | [模板根 scripts/mono_stdd.py](../.agents/skills/init_mono/assets/workspace/scripts/mono_stdd.py) | 任务与本仓 STDD 变更的创建、关联和归档定位 |
 | [模板根 AGENTS.md](../.agents/skills/init_mono/assets/workspace/AGENTS.md)及其 `docs/mono/`、`.agents/skills/` | 生成工作区的规则、系统文档和三个日常技能 |
-| [assets/upgrade-v1.json](../.agents/skills/init_mono/assets/upgrade-v1.json) | 升级时识别已知旧版文件的摘要 |
+| [assets/upgrade-v*.json](../.agents/skills/init_mono/assets/) | 升级时识别各已知旧版文件的摘要 |
 | [examples/](../examples/README.md) | 现有仓库配置、STDD 登录任务、纯流程输入和三仓演练 |
 | [tests/test_scaffold.py](../tests/test_scaffold.py) | 项目接入、任务隔离、升级保护及验收证据有效性的行为测试 |
 | [scripts/package_skill.py](../scripts/package_skill.py) | 将技能源码打包为根目录 `init_mono.zip`，或核对包与源码一致 |
@@ -53,15 +53,23 @@ STDD/SDD 是可接入的仓内流程，普通 Git 仓库也能使用 Mono。工�
 | 工作区 `kind` | `directory` 创建普通目录；`repository` 额外初始化 Git 协调仓库；`process` 只登记引用与协作流程 |
 | 项目 `mode` | `auto` 根据来源判断；`worktree` 接入本地 Git 根目录；`clone` 建立独立克隆；`reference` 保存项目或资料入口 |
 
-本地 Git 默认通过 detached worktree 接入 `repos/项目`，远端 Git 地址默认独立 clone。初始化输入中的相对路径以 JSON 所在目录解析，`mono.py add` 的相对路径以调用时的当前目录解析。`ref` 默认是 `HEAD`，工具不会自动 fetch。
+本地 Git 默认通过 detached worktree 接入 `repos/项目`，远端 Git 地址默认独立 clone。初始化输入中的相对路径以 JSON 所在目录解析，`mono.py add` 的相对路径以调用时的当前目录解析。接入时的 `ref` 默认是 `HEAD`，创建工作树时读取的远端目标由下文的任务规则决定。
 
 初始化目标必须是新目录；`--dry-run` 校验并展示计划。Git 接入中途失败时保留上下文和已成功接入的状态，按输出提示检查 `mono.json`、项目路径与 `git worktree list`。追加项目使用 `mono.py add`，保留已有手写系统说明，更新清单和生成索引。
+
+### 团队成员克隆协调仓
+
+协调仓提交工具、清单、文档和任务记录。模板忽略 `repos/` 与 `work/`，业务代码分别由各仓管理。成员克隆协调仓后用 `mono.py bootstrap` 恢复登记的 Git 业务仓，也可以指定项目名只恢复所选仓库。开展 feature 时，`mono-start` 用 `baselines --sync` 获取候选仓的目标提交，根据系统关系和目标版本的代码判断范围。
+
+`bootstrap` 从 `clone_source` 或 Git URL 形式的 `source` 克隆缺失项目，检出清单记录的 `base_sha`。本地 worktree 接入时，优先用显式提供的 `clone_source`，其次从本地业务仓的 `origin` 读取远端地址。读取的是仓库配置中存储的地址，HTTP(S) 用户信息会去掉，本地路径和 file URL 保留为纯本地场景。旧清单支持用 `--source PROJECT=GIT_URL` 临时指定地址。该命令保留已有检出和共享记录，允许失败后重跑。新任务仍可用 `--base` 选择更新的引用。
 
 ### 任务与三个日常技能
 
 日常顺序为 `mono-start` → 各仓实现 → `mono-verify` → `mono-wrap`。技能说明分别位于模板根 `.agents/skills/` 下的同名目录。
 
-`mono.py new INPUT --worktrees` 为所选项目创建 `work/任务号/项目`，默认分支为 `mono/任务号`。可以用多组 `--base 项目=引用`、`--branch 项目=分支` 选择各仓基线与分支；省略 `--worktrees` 时复用接入的检出。任务参与仓由输入的 `projects` 决定。
+`mono.py new INPUT --worktrees` 为输入 `projects` 选中的项目创建 `work/任务号/项目`，默认分支为 `mono/任务号`。首先采用显式的 `--base 项目=引用`，否则查询项目的 `target_branch`、登记的 origin 分支或远端默认分支。需要时获取对应提交，将远端分支及确切 SHA 固定到任务记录。当远端刷新失败时停止创建任务，只在没有指定目标且没有远端的本地仓采用接入检出的 HEAD。
+
+首次接入的 `repos/项目` 负责长期保存业务检出及创建任务的 Git 入口。由独立克隆创建的任务工作树还依赖该目录下的 Git 数据。`baselines` 返回候选仓的目标分支和 SHA，带 `--sync` 时快进干净的 detached 检出。本地改动、本地分支和已分叉的检出会保留，Agent 可直接从 Git 读取目标提交。新工作树使用分析过的 SHA，已有任务工作树保留各自版本。可以用 `--branch 项目=分支` 为新任务选择分支；省略 `--worktrees` 时复用接入的检出。
 
 | 任务目录中的文件 | 用途 |
 |---|---|
@@ -89,7 +97,7 @@ STDD/SDD 是可接入的仓内流程，普通 Git 仓库也能使用 Mono。工�
 
 `init_mono.py --upgrade WORKSPACE` 只更新列入升级范围的工具和文档。目标内容与当前模板或已知旧版摘要相符时才替换；自定义 README 会保留，其他待替换文件存在自定义内容时要求先比对。任务、业务目录和手写系统说明继续保留。
 
-修改模板工具时，需要同时考虑新生成工作区和已有工作区的升级路径。维护 `upgrade-v1.json` 时保留已知旧版的识别含义，避免为通过检查而直接改成新文件摘要。
+修改模板工具时，需要同时考虑新生成工作区和已有工作区的升级路径。新增可升级版本时记录该版本的旧文件摘要，并保留之前可识别的版本。
 
 ## 三仓示例与可重现性
 
