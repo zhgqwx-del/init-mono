@@ -59,6 +59,33 @@ python3 -B scripts/mono.py bootstrap
 | Claude Code | `.claude/skills/` | `/mono-start`、`/mono-verify`、`/mono-wrap` |
 | Qoder | `.qoder/skills/` | `/mono-start`、`/mono-verify`、`/mono-wrap` |
 
+### Mono 与 STDD 使用顺序
+
+~~~mermaid
+flowchart TD
+    Start["协调仓 · mono-start<br/>对齐共同契约和验收判据，准备任务工作树"]
+    Work["各参与仓在自己的任务工作树推进，可并行"]
+    Stdd["stdd-start → stdd-delivery<br/>复用任务分支，确认仓内规格和方案后写测试、实现"]
+    Native["按本仓流程开发和测试"]
+    Local["仓内验收记录与交付<br/>stdd-test-report、stdd-review、stdd-wrap"]
+    Candidate["已有可联调的版本组合"]
+    Verify["协调仓 · mono-verify<br/>运行仓内检查和跨服务联调，记录受测版本和证据"]
+    Wrap["协调仓 · mono-wrap<br/>核对联合验收回执，汇总各仓候选提交或 PR、发布依赖"]
+
+    Start --> Work
+    Work -->|STDD 仓| Stdd
+    Work -->|其他仓| Native
+    Stdd --> Candidate
+    Native --> Candidate
+    Stdd -. 按各仓约定 .-> Local
+    Candidate --> Verify
+    Verify --> Wrap
+    Local -. 提供各仓交付信息 .-> Wrap
+    Wrap -. 回执与候选版本或规格不符时复验 .-> Verify
+~~~
+
+有可联调的版本组合就可以开始 `mono-verify`。单仓报告、评审和收尾按各仓约定推进。最终回执要匹配交付候选版本和共同规格。同步分支、更新仓内报告或归档后，如果已有回执过期，就回到 `mono-verify` 复验。[STDD 使用顺序](https://github.com/zhgqwx-del/stdd-sdd/blob/main/stdd-use-demo/docs/stdd/workflows.md#使用顺序)
+
 > 用 mono-start 开始 FEAT-101，给活动列表新增筛选。先更新候选仓的目标版本，再根据代码判断影响范围，只为需要任务版本的仓库建立工作树。
 
 1. 用 `mono-start` 写共同契约和验收场景，为参与仓建立 `work/需求号` 下的工作树。各业务仓有自己的分支和合入目标。
@@ -66,7 +93,9 @@ python3 -B scripts/mono.py bootstrap
 3. 用 `mono-verify` 跑仓内检查，再跑真实跨服务测试，记录实际受测版本和结果。
 4. 用 `mono-wrap` 对齐各仓候选提交或 PR、发布顺序和后续接手信息。评审、权限和发布沿用各仓安排。
 
-第一项任务可以用 [FEAT-LOGIN 输入与操作示例](examples/stdd-feature/README.md)。手头暂时没有业务仓时，可以先用 [三仓演练](examples/three-services/README.md)创建并跑通一组本地仓库。
+以 `FEAT-LOGIN` 为例，在协调根运行 `python3 -B scripts/mono.py status FEAT-LOGIN`，找到前端和认证后端的任务工作树。各仓在自己的 `verification.md` 记录仓内结果。浏览器到认证后端的登录联调结果记入协调仓的 `tasks/FEAT-LOGIN/verification.json`。[FEAT-LOGIN 输入与操作示例](examples/stdd-feature/README.md)
+
+手头暂时没有业务仓时，可以先用 [三仓演练](examples/three-services/README.md)创建并跑通一组本地仓库。
 
 成员用各自的任务号开工，例如 FEAT-101 和 FEAT-102。每项 feature 将 `tasks/<任务号>/` 的共有记录提交到协调仓，把 `work/<任务号>/<项目>/` 中的代码提交并推送到对应业务仓。协调仓和各业务仓的 PR 可用任务号互相引用。
 
