@@ -13,7 +13,7 @@ import sys
 import uuid
 
 from mono_projects import (
-    attach, git_root, head, prepare_project, project_name, read_registry,
+    attach, git_root, head, prepare_project, project_name, read_registry, read_workspace_version,
     remote, task_base, write_lock, write_project_index, write_registry,
 )
 from mono_stdd import bind, describe
@@ -448,6 +448,7 @@ def main():
     bootstrap.add_argument("projects", nargs="*", metavar="PROJECT")
     bootstrap.add_argument("--source", action="append", default=[], metavar="PROJECT=GIT_URL")
     commands.add_parser("repos", help="list registered repositories")
+    commands.add_parser("version", help="show the scaffold Release versions and upgrade history")
     baselines = commands.add_parser("baselines", help="resolve and fetch target commits for feature planning")
     baselines.add_argument("projects", nargs="*", metavar="PROJECT")
     baselines.add_argument("--sync", action="store_true", help="fast-forward clean detached base checkouts")
@@ -483,6 +484,9 @@ def main():
             return 0
         if args.operation == "repos":
             print(json.dumps(read_registry(ROOT)["projects"], ensure_ascii=False, indent=2))
+            return 0
+        if args.operation == "version":
+            print(json.dumps(read_workspace_version(ROOT), ensure_ascii=False, indent=2))
             return 0
         if args.operation == "baselines":
             project_baselines(args.projects, args.sync)

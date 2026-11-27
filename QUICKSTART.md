@@ -96,6 +96,8 @@ git -C "$mono_workspace" diff
 
 使用新版 ZIP 时，把命令里的脚本路径换成解压所得的 `init_mono/scripts/init_mono.py`。
 
+在协调仓根目录运行 `python3 -B scripts/mono.py version`，查看初始化时的 Release、当前 Release 和升级历史。新建或升级成功后会将记录写入 `mono-version.json`，可随协调仓提交。早期协调仓首次升级会补记本次安装版本，无法追溯的初始版本会显示为 `null`。
+
 升级会更新列入升级范围的工具和技能，并重新生成项目索引 `docs/mono/projects.md`。它会保留 `mono.json`、已有任务、业务仓检出、任务工作树、手写系统说明和自定义 README。遇到团队改过的待升级脚本或技能时，升级器会在替换文件前停止，并提示待比对的路径。
 
 团队维护者审阅差异后，把升级改动提交并合入协调仓的共享分支。其他成员拉取协调仓更新即可使用新版工具。如果是为旧协调仓首次接入 `bootstrap`，且 `mono.json` 只记录了创建者的本地路径，维护者在共享清单中一次性补齐队友可访问的 `clone_source`，确认已登记的基线提交能从该远端获取，再把清单随升级一起提交。[项目认知与维护指南](docs/project-context.md)

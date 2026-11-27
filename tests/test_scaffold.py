@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -374,9 +375,53 @@ class ScaffoldTests(unittest.TestCase):
         cli = space / "scripts/mono.py"
         cli.write_text("# customized implementation\n")
         before = (space / "mono.json").read_bytes()
+        version = (space / "mono-version.json").read_bytes()
         self.call(INIT, "--upgrade", space, ok=False)
         self.assertEqual(cli.read_text(), "# customized implementation\n")
         self.assertEqual((space / "mono.json").read_bytes(), before)
+        self.assertEqual((space / "mono-version.json").read_bytes(), version)
+
+    def test_release_version_is_recorded_and_preserved_through_upgrade(self):
+        space = self.task_space()
+        cli = space / "scripts/mono.py"
+        bundle = INIT.parents[1]
+        version = (bundle / "VERSION").read_text().strip()
+        self.assertEqual(json.loads(self.call(cli, "version").stdout), {
+            "initialized_version": version, "current_version": version, "upgrades": [],
+        })
+        upgraded_bundle = self.root / "next-bundle"
+        shutil.copytree(bundle, upgraded_bundle)
+        major, minor, patch_number = version[1:].split(".")
+        next_version = f"v{major}.{minor}.{int(patch_number) + 1}"
+        (upgraded_bundle / "VERSION").write_text(next_version + "\n")
+        newer = upgraded_bundle / "scripts/init_mono.py"
+        registry = (space / "mono.json").read_bytes()
+        task = space / "tasks/CAT-42/task.md"
+        task_before = task.read_bytes()
+
+        self.call(newer, "--upgrade", space)
+        self.call(newer, "--upgrade", space)
+        self.assertEqual(json.loads(self.call(cli, "version").stdout), {
+            "initialized_version": version, "current_version": next_version,
+            "upgrades": [{"from": version, "to": next_version}],
+        })
+        self.assertEqual((space / "mono.json").read_bytes(), registry)
+        self.assertEqual(task.read_bytes(), task_before)
+        before = (space / "mono-version.json").read_bytes()
+        downgrade = self.call(INIT, "--upgrade", space, ok=False)
+        self.assertIn(f"already uses {next_version}", downgrade.stdout)
+        self.assertEqual((space / "mono-version.json").read_bytes(), before)
+
+    def test_upgrade_backfills_a_legacy_workspace_without_guessing_initial_version(self):
+        space = self.init(kind="process")
+        record = space / "mono-version.json"
+        record.unlink()
+        self.assertIsNone(json.loads(self.call(space / "scripts/mono.py", "version").stdout)["current_version"])
+        tag = (INIT.parents[1] / "VERSION").read_text().strip()
+        self.call(INIT, "--upgrade", space)
+        self.assertEqual(json.loads(record.read_text()), {
+            "initialized_version": None, "current_version": tag, "upgrades": [{"from": None, "to": tag}],
+        })
 
     def test_failure_and_changed_code_cannot_pass(self):
         space = self.task_space()

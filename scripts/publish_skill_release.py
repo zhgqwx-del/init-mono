@@ -2,10 +2,12 @@
 """Publish the tested skill ZIP when it differs from the latest GitHub Release."""
 import argparse
 import hashlib
+import io
 import json
 from pathlib import Path
 import re
 import subprocess
+from zipfile import BadZipFile, ZipFile
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,20 +31,31 @@ def has_package(release, digest):
                for asset in release["assets"])
 
 
-def next_patch_tag(latest_tag):
-    match = re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", latest_tag)
+def version_parts(tag):
+    match = re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", tag)
     if not match:
-        raise ValueError(f"latest Release must use a vMAJOR.MINOR.PATCH tag: {latest_tag}")
-    major, minor, patch = match.groups()
-    prefix = f"v{major}.{minor}."
-    used = [int(patch)]
-    # An interrupted publication may have reserved a tag before uploading its asset.
-    refs = run("git", "ls-remote", "--tags", "--refs", "origin", f"refs/tags/{prefix}*")
-    for line in refs.splitlines():
-        ref = line.split("\t", 1)[1]
-        if match := re.fullmatch("refs/tags/" + re.escape(prefix) + r"(0|[1-9][0-9]*)", ref):
-            used.append(int(match[1]))
-    return f"{prefix}{max(used) + 1}"
+        raise ValueError(f"expected a vMAJOR.MINOR.PATCH tag: {tag!r}")
+    return tuple(int(part) for part in match.groups())
+
+
+def release_plan(repository):
+    bundle = PACKAGE.read_bytes()
+    digest = "sha256:" + hashlib.sha256(bundle).hexdigest()
+    with ZipFile(io.BytesIO(bundle)) as archive:
+        try:
+            tag = archive.read("init_mono/VERSION").decode("utf-8").strip()
+        except KeyError as error:
+            raise ValueError("init_mono.zip lacks init_mono/VERSION; regenerate the ZIP") from error
+    requested = version_parts(tag)
+    latest = api(repository, "releases/latest")
+    latest_tag = latest["tag_name"]
+    if has_package(latest, digest):
+        if tag != latest_tag:
+            raise ValueError(f"ZIP declares {tag}, but the identical Release asset is tagged {latest_tag}")
+        return tag, digest, False
+    if requested <= version_parts(latest_tag):
+        raise ValueError(f"ZIP changed; bump VERSION above {latest_tag} and regenerate init_mono.zip")
+    return tag, digest, True
 
 
 def publish(repository, commit):
@@ -52,13 +65,11 @@ def publish(repository, commit):
         print("main advanced since this run started. Its newer CI run will handle publishing.")
         return
 
-    digest = "sha256:" + hashlib.sha256(PACKAGE.read_bytes()).hexdigest()
-    latest = api(repository, "releases/latest")
-    if has_package(latest, digest):
-        print(f"{latest['tag_name']} already contains the ZIP from main.")
+    tag, digest, needs_release = release_plan(repository)
+    if not needs_release:
+        print(f"{tag} already contains the ZIP from main.")
         return
 
-    tag = next_patch_tag(latest["tag_name"])
     if current_main(repository) != commit:
         print("main advanced before publishing. Its newer CI run will handle publishing.")
         return
@@ -75,9 +86,18 @@ def publish(repository, commit):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("repository")
-    parser.add_argument("commit")
+    parser.add_argument("commit", nargs="?")
+    parser.add_argument("--check", action="store_true", help="check ZIP version against Releases without publishing")
     args = parser.parse_args()
     try:
-        publish(args.repository, args.commit)
-    except (OSError, ValueError, subprocess.CalledProcessError) as error:
+        if args.check:
+            if args.commit:
+                parser.error("--check does not take a commit")
+            tag, _, needs_release = release_plan(args.repository)
+            print(f"ZIP declares {tag}. New Release needed: {needs_release}.")
+        elif args.commit:
+            publish(args.repository, args.commit)
+        else:
+            parser.error("provide the tested commit or --check")
+    except (OSError, ValueError, BadZipFile, subprocess.CalledProcessError) as error:
         parser.exit(1, f"{error}\n")
