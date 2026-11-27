@@ -33,9 +33,25 @@ python3 -B "$mono_script" "$mono_config" "$mono_target"
 
 kind 选 repository 会初始化 Git 协调仓库，选 directory 生成普通目录，选 process 只登记引用和流程。脚本把启动、测试与权限约定写入说明，具体命令由 Agent 按实际环境执行。[输入字段与模式](.agents/skills/init_mono/references/inputs.md)
 
-## 二 从协作根启动一个需求
+## 二 发布并克隆团队协调仓
 
-在 Agent 中打开生成的 account-mono。先看 AGENTS.md、mono.json、docs/mono/system.md 和 operations.md，核对调用关系、联调配置及测试数据来源。
+初始化团队协调仓时选择 `kind: repository`。每个业务仓的 `source` 可填团队有权限访问的 Git URL，也可填本地仓库路径以使用 worktree。用本地 worktree 时，脚手架会从业务仓已配置的 `origin` 取得远端地址并将其记为 `clone_source`。如果 `origin` 缺失、指向本机，或是队友无法访问的个人 fork，可以显式填写团队的共享地址。各仓登记的基线提交需要能从对应远端克隆得到。
+
+创建者将协调仓的清单、工具和共享文档提交到 GitHub 或 GitLab。生成的 `.gitignore` 会忽略 `repos/` 和 `work/`。团队成员分别克隆协调仓，使用自己的业务仓权限恢复检出。
+
+~~~sh
+git clone git@gitlab.example.com:team/demo-harness.git
+cd demo-harness
+python3 -B scripts/mono.py bootstrap
+~~~
+
+`bootstrap` 默认在 `repos/<项目>` 恢复清单中所有登记了基线的 Git 业务仓，已有检出会保留。初次接手可以先拉齐全部业务仓。已知范围时，也可以指定项目名，例如 `bootstrap child-repo1 child-repo2`。此前生成的协调仓可按第四节升级。已有清单如果只记录了本地路径，可补填共享的 `clone_source`，或临时传入 `--source 项目=Git_URL`。
+
+## 三 从协作根启动一个需求
+
+在 Agent 中打开协调仓根目录。先看 AGENTS.md、mono.json、docs/mono/system.md 和 operations.md，核对调用关系、联调配置及测试数据来源。
+
+> 用 $mono-start 开始 FEAT-101，给活动列表新增筛选。先更新候选仓的目标版本，再根据代码判断影响范围，只为需要任务版本的仓库建立工作树。
 
 1. 用 $mono-start 写共同契约和验收场景，为参与仓建立 work/需求号 下的工作树。各业务仓有自己的分支和合入目标。
 2. 在对应工作树按仓内 STDD 技能开发。scripts/mono.py stdd 可调用该仓的原生模板创建变更，也可把已有变更关联到同一 Mono 工单。
@@ -44,7 +60,21 @@ kind 选 repository 会初始化 Git 协调仓库，选 directory 生成普通�
 
 第一项任务可以用 [FEAT-LOGIN 输入与操作示例](examples/stdd-feature/README.md)。手头暂时没有业务仓时，可以先用 [三仓演练](examples/three-services/README.md)创建并跑通一组本地仓库。
 
-## 三 后续添加仓库或升级工具
+成员用各自的任务号开工，例如 FEAT-101 和 FEAT-102。每项 feature 将 `tasks/<任务号>/` 的共有记录提交到协调仓，把 `work/<任务号>/<项目>/` 中的代码提交并推送到对应业务仓。协调仓和各业务仓的 PR 可用任务号互相引用。
+
+命令行开工时，在任务 JSON 中显式填写 `projects`。例如已经拉齐三个业务仓，FEAT-101 只涉及两个，可以填 `"projects": ["child-repo1", "child-repo2"]`，再执行 `python3 -B scripts/mono.py new /path/to/feat-101.json --worktrees`。第三个仓仍可从 `repos/` 查阅或按基线运行。
+
+### 下一项 feature 从最新目标分支开始
+
+`mono-start` 会先用 `baselines --sync` 查询候选仓的远端目标分支并获取提交。命令快进干净的 detached `repos/` 检出。遇到本地改动、正在使用的本地分支、历史分叉或切换受阻时，Agent 会直接读取目标提交。确定范围后，Agent 使用分析过的 SHA 为参与仓创建新工作树。
+
+团队可在 `mono.json` 为每个项目设置 `target_branch`，例如 `child-repo1` 用 `main`，`child-repo2` 用 `develop`。省略时沿用接入时登记的 `origin/<分支>`，其余用远端默认分支。范围明确时可以运行 `python3 -B scripts/mono.py baselines --sync child-repo1 child-repo2`；省略仓名时处理全部已登记的 Git 业务仓。
+
+直接运行 `new --worktrees` 时，工具会获取新工作树所需的目标提交。复现或离线时可以传 `--base child-repo1=HEAD` 或指定本地已有的 SHA。已有任务保留各自的工作树，已结束任务可以按协调仓 README 清理。
+
+## 四 后续添加仓库或升级工具
+
+### 追加项目
 
 在已生成的 Mono 根追加新项目。
 
@@ -53,10 +83,19 @@ python3 -B scripts/mono.py add profile-api git@gitlab.example.com:team/profile-a
 python3 -B scripts/mono.py repos
 ~~~
 
-针对新 feature 选择需要参与的仓库，按各仓约定核对基线。使用最新版 ZIP 解压得到的脚本升级已有协作目录。
+### 升级已有协调仓
+
+用新版脚手架的初始化器，将已有协调仓根目录传给 `--upgrade`。如果在新版 init-mono 源码仓根目录操作，可以运行下面的命令。
 
 ~~~sh
-python3 -B "$mono_script" --upgrade "$mono_target"
+mono_workspace="/path/to/demo-harness"
+python3 -B .agents/skills/init_mono/scripts/init_mono.py --upgrade "$mono_workspace"
+git -C "$mono_workspace" status --short
+git -C "$mono_workspace" diff
 ~~~
 
-升级会核对生成的旧版工具文件，保留业务仓、已有任务和手写系统说明。遇到团队改过的工具时，先比对再合并。[实践手册](docs/practice.md)
+使用新版 ZIP 时，把命令里的脚本路径换成解压所得的 `init_mono/scripts/init_mono.py`。
+
+升级会更新列入升级范围的工具和技能，并重新生成项目索引 `docs/mono/projects.md`。它会保留 `mono.json`、已有任务、业务仓检出、任务工作树、手写系统说明和自定义 README。遇到团队改过的待升级脚本或技能时，升级器会在替换文件前停止，并提示待比对的路径。
+
+团队维护者审阅差异后，把升级改动提交并合入协调仓的共享分支。其他成员拉取协调仓更新即可使用新版工具。如果是为旧协调仓首次接入 `bootstrap`，且 `mono.json` 只记录了创建者的本地路径，维护者在共享清单中一次性补齐队友可访问的 `clone_source`，确认已登记的基线提交能从该远端获取，再把清单随升级一起提交。[项目认知与维护指南](docs/project-context.md)

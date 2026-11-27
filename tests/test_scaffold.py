@@ -1,5 +1,6 @@
 """Behavioral checks for multi-repository generation and acceptance freshness."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -45,9 +46,9 @@ class ScaffoldTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def call(self, *args, ok=True):
+    def call(self, *args, ok=True, env=None):
         process = subprocess.run([sys.executable, "-B", *(str(a) for a in args)],
-                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
         if ok:
             self.assertEqual(process.returncode, 0, process.stdout)
         else:
@@ -92,6 +93,100 @@ class ScaffoldTests(unittest.TestCase):
         self.assertEqual(git(space, "check-ignore", "repos/web/", "work/CAT-42/web/"),
                          "repos/web/\nwork/CAT-42/web/")
         self.assertEqual(len(list((space / ".agents/skills").glob("*/SKILL.md"))), 3)
+
+    def test_team_clones_start_separate_features_from_current_targets(self):
+        web, api = self.sources
+        web_remote, api_remote = self.root / "web.git", self.root / "api.git"
+        for source, remote in ((web, web_remote), (api, api_remote)):
+            git(self.root, "clone", "--bare", "-q", str(source), str(remote))
+        web_url = "https://git.example.invalid/team/web.git"
+        git(web, "remote", "add", "origin", "https://dev:fixture-token@git.example.invalid/team/web.git")
+        self.config["projects"][1].update(source=api_remote.as_uri(), mode="auto")
+        # Simulate a team Git remote with a local bare repository and no network access.
+        env = dict(os.environ, GIT_CONFIG_COUNT="1", GIT_ALLOW_PROTOCOL="file",
+                   GIT_CONFIG_KEY_0=f"url.{web_remote.as_uri()}.insteadOf", GIT_CONFIG_VALUE_0=web_url)
+        self.input.write_text(json.dumps(self.config))
+        space = self.root / "space"
+        self.call(INIT, self.input, space, env=env)
+        manifest = (space / "mono.json").read_text()
+        self.assertEqual(json.loads(manifest)["projects"][0]["clone_source"], web_url)
+        self.assertNotIn("fixture-token", manifest)
+        git(space, "add", ".")
+        git(space, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+            "commit", "-qm", "Publish coordination context")
+        baseline = git(web, "rev-parse", "HEAD")
+        (web / "app.txt").write_text("new main\n")
+        git(web, "add", "app.txt")
+        git(web, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+            "commit", "-qm", "Advance remote main")
+        git(web, "push", "-q", str(web_remote), "main")
+
+        for task_id in ("CAT-42", "CAT-43"):
+            member = self.root / task_id
+            git(self.root, "clone", "-q", str(space), str(member))
+            cli = member / "scripts/mono.py"
+            self.assertFalse((member / "repos").exists())
+            missing = self.call(cli, "new", self.task, "--worktrees", ok=False)
+            self.assertIn("mono.py bootstrap", missing.stdout)
+            self.assertFalse((member / "tasks").exists())
+            self.call(cli, "bootstrap", env=env)
+            self.assertEqual(git(member, "status", "--porcelain"), "")
+            self.assertEqual(git(member / "repos/web", "rev-parse", "HEAD"), baseline)
+            self.assertNotEqual(git(member / "repos/web", "rev-parse", "origin/main"), baseline)
+            spec = json.loads(self.task.read_text())
+            spec["id"] = task_id
+            task_input = self.root / (task_id + ".json")
+            task_input.write_text(json.dumps(spec))
+            self.call(cli, "new", task_input, "--worktrees", env=env)
+            for name in ("web", "api"):
+                checkout = member / "work" / task_id / name
+                self.assertEqual(git(checkout, "branch", "--show-current"), f"mono/{task_id}")
+                expected = "new main" if name == "web" else "baseline"
+                self.assertEqual((checkout / "app.txt").read_text(), expected + "\n")
+            git(member, "add", ".")
+            tracked = git(member, "ls-files", "--stage").splitlines()
+            self.assertTrue(any(line.endswith(f"\ttasks/{task_id}/projects.json") for line in tracked))
+            self.assertFalse(any(line.startswith("160000 ") or "\trepos/" in line or "\twork/" in line
+                                 for line in tracked))
+        (self.root / "CAT-42/work/CAT-42/web/app.txt").write_text("member one edit\n")
+        self.assertEqual((self.root / "CAT-43/work/CAT-43/web/app.txt").read_text(), "new main\n")
+
+    def test_bootstrap_recovers_after_failure_and_preserves_existing_checkouts(self):
+        git(self.sources[0], "remote", "add", "origin", self.sources[1].as_uri())
+        space = self.init()
+        self.assertNotIn("clone_source", json.loads((space / "mono.json").read_text())["projects"][0])
+        member = self.root / "member"
+        git(space, "add", ".")
+        git(space, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+            "commit", "-qm", "Publish existing manifest")
+        git(self.root, "clone", "-q", str(space), str(member))
+        cli = member / "scripts/mono.py"
+        empty = self.root / "empty.git"
+        git(self.root, "init", "--bare", "-q", str(empty))
+        missing = self.call(cli, "bootstrap", ok=False)
+        self.assertIn("web: set clone_source", missing.stdout)
+        failed = self.call(cli, "bootstrap", "--source", f"web={self.sources[0].as_uri()}",
+                           "--source", f"api={empty.as_uri()}", ok=False)
+        self.assertIn("api: could not restore", failed.stdout)
+        self.assertFalse((member / "repos/api").exists())
+        existing = member / "repos/web/app.txt"
+        existing.write_text("local edit\n")
+        self.call(cli, "bootstrap", "api", "--source", f"api={self.sources[1].as_uri()}")
+        self.call(cli, "bootstrap")
+        self.assertEqual(existing.read_text(), "local edit\n")
+        self.assertEqual(git(member, "status", "--porcelain"), "")
+
+    def test_worktree_uses_ssh_origin_and_allows_shared_url_override(self):
+        web, api = self.sources
+        web_url = "git@gitlab.example.invalid:team/web.git"
+        api_url = "ssh://git@gitlab.example.invalid/team/api.git"
+        git(web, "remote", "add", "origin", web_url)
+        git(api, "remote", "add", "origin", "git@gitlab.example.invalid:fork/api.git")
+        self.config["projects"][1].update(mode="worktree", clone_source=api_url)
+        space = self.init()
+        projects = json.loads((space / "mono.json").read_text())["projects"]
+        self.assertEqual([p["clone_source"] for p in projects], [web_url, api_url])
+        self.assertTrue(all((space / p["path"] / ".git").is_file() for p in projects))
 
     def test_dry_run_and_input_errors_write_nothing(self):
         self.input.write_text(json.dumps(self.config))
@@ -151,6 +246,103 @@ class ScaffoldTests(unittest.TestCase):
         self.assertEqual(rows["api"]["branch"], "mono/CAT-42")
         self.assertEqual((space / "repos/web/app.txt").read_text(), "baseline\n")
         self.assertEqual((space / "work/CAT-42/web/app.txt").read_text(), "next merged base\n")
+
+    def test_new_refreshes_target_branch_without_moving_existing_checkouts(self):
+        api = self.sources[1]
+        git(api, "branch", "develop")
+        self.config["projects"][1]["target_branch"] = "develop"
+        space = self.task_space()
+        old = space / "work/CAT-42/api"
+        (old / "app.txt").write_text("local work still in progress\n")
+        original = git(old, "rev-parse", "HEAD")
+        git(api, "switch", "develop")
+        (api / "app.txt").write_text("latest develop\n")
+        git(api, "add", "app.txt")
+        git(api, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+            "commit", "-qm", "Advance the target branch")
+        latest = git(api, "rev-parse", "HEAD")
+        base_checkout = space / "repos/api"
+        self.assertNotEqual(git(base_checkout, "rev-parse", "origin/develop"), latest)
+        self.assertNotEqual(git(api, "rev-parse", "main"), latest)
+        (base_checkout / "app.txt").write_text("local base edit\n")
+        task = json.loads(self.task.read_text())
+        task.update(id="CAT-43", projects=["api"])
+        self.task.write_text(json.dumps(task))
+        self.call(space / "scripts/mono.py", "new", self.task, "--worktrees")
+        state = json.loads((space / "tasks/CAT-43/projects.json").read_text())
+        self.assertEqual(state["api"]["base_ref"], "refs/heads/develop")
+        self.assertEqual(state["api"]["base_sha"], latest)
+        self.assertEqual((space / "work/CAT-43/api/app.txt").read_text(), "latest develop\n")
+        self.assertEqual(git(base_checkout, "rev-parse", "HEAD"), original)
+        self.assertEqual((base_checkout / "app.txt").read_text(), "local base edit\n")
+        self.assertEqual(git(old, "rev-parse", "HEAD"), original)
+        self.assertEqual((old / "app.txt").read_text(), "local work still in progress\n")
+
+    def test_missing_remote_target_blocks_task_and_explicit_base_works_offline(self):
+        self.config["projects"][1]["target_branch"] = "missing"
+        space = self.init()
+        task = json.loads(self.task.read_text())
+        task["projects"] = ["api"]
+        self.task.write_text(json.dumps(task))
+        cli = space / "scripts/mono.py"
+        failed = self.call(cli, "new", self.task, "--worktrees", ok=False)
+        self.assertIn("api: could not refresh refs/heads/missing", failed.stdout)
+        self.assertFalse((space / "tasks/CAT-42").exists())
+        self.assertFalse((space / "work/CAT-42").exists())
+        self.call(cli, "new", self.task, "--worktrees", "--base", "api=HEAD")
+        self.assertTrue((space / "work/CAT-42/api/app.txt").is_file())
+
+    def test_planning_syncs_clean_baseline_and_pins_the_inspected_commit(self):
+        api = self.sources[1]
+        space = self.init()
+        cli, checkout = space / "scripts/mono.py", space / "repos/api"
+        original = git(checkout, "rev-parse", "HEAD")
+        (api / "new_caller.txt").write_text("Calls the web repository\n")
+        git(api, "add", "new_caller.txt")
+        git(api, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+            "commit", "-qm", "Add a caller after the coordinator was initialized")
+
+        report = json.loads(self.call(cli, "baselines", "api").stdout)
+        self.assertEqual(set(report), {"api"})
+        inspected = report["api"]["base_sha"]
+        self.assertEqual(inspected, git(api, "rev-parse", "HEAD"))
+        self.assertEqual(report["api"]["base_ref"], "refs/heads/main")
+        self.assertEqual(git(checkout, "show", f"{inspected}:new_caller.txt"), "Calls the web repository")
+        self.assertEqual(git(checkout, "rev-parse", "HEAD"), original)
+        self.assertFalse((checkout / "new_caller.txt").exists())
+
+        synced = json.loads(self.call(cli, "baselines", "--sync", "api").stdout)["api"]
+        self.assertEqual(synced["checkout_state"], "updated")
+        self.assertEqual(git(checkout, "rev-parse", "HEAD"), inspected)
+        self.assertTrue((checkout / "new_caller.txt").is_file())
+        self.assertFalse((space / "work").exists())
+        self.assertFalse((space / "tasks").exists())
+
+        (checkout / "app.txt").write_text("local baseline edit\n")
+        (api / "new_caller.txt").write_text("Another upstream change\n")
+        git(api, "add", "new_caller.txt")
+        git(api, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+            "commit", "-qm", "Advance while the feature scope is being analyzed")
+        next_report = json.loads(self.call(cli, "baselines", "api", "--sync").stdout)["api"]
+        self.assertEqual(next_report["checkout_state"], "local_changes")
+        self.assertEqual(next_report["base_sha"], git(api, "rev-parse", "HEAD"))
+        self.assertEqual(git(checkout, "rev-parse", "HEAD"), inspected)
+        self.assertEqual((checkout / "app.txt").read_text(), "local baseline edit\n")
+
+        git(checkout, "add", "app.txt")
+        git(checkout, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+            "commit", "-qm", "Save a local baseline change on detached HEAD")
+        local = git(checkout, "rev-parse", "HEAD")
+        diverged = json.loads(self.call(cli, "baselines", "api", "--sync").stdout)["api"]
+        self.assertEqual(diverged["checkout_state"], "diverged")
+        self.assertEqual(git(checkout, "rev-parse", "HEAD"), local)
+
+        spec = json.loads(self.task.read_text())
+        spec["projects"] = ["api"]
+        self.task.write_text(json.dumps(spec))
+        self.call(cli, "new", self.task, "--worktrees", "--base", f"api={inspected}")
+        self.assertEqual({p.name for p in (space / "work/CAT-42").iterdir()}, {"api"})
+        self.assertEqual(git(space / "work/CAT-42/api", "rev-parse", "HEAD"), inspected)
 
     def test_stdd_existing_changes_resolve_when_archived_and_base_is_protected(self):
         space = self.task_space()

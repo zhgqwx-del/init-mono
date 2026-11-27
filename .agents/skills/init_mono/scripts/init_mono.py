@@ -123,7 +123,8 @@ def initialize(config, target, dry_run):
 
 def upgrade(target):
     registry = read_registry(target)
-    hashes = json.loads((ASSETS.parent / "upgrade-v1.json").read_text(encoding="utf-8"))
+    versions = [json.loads(path.read_text(encoding="utf-8"))
+                for path in ASSETS.parent.glob("upgrade-v*.json")]
     files = [
         "scripts/mono.py", "scripts/mono_projects.py", "scripts/mono_stdd.py", "README.md",
         "docs/mono/stdd-sdd.md",
@@ -137,7 +138,8 @@ def upgrade(target):
         elif path.is_symlink() or not path.is_file():
             raise ValueError(f"review this customized path before upgrading: {path}")
         elif path.read_bytes() != source.read_bytes():
-            if hashlib.sha256(path.read_bytes()).hexdigest() != hashes.get(name):
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            if not any(digest == hashes.get(name) for hashes in versions):
                 # A team's README can be retained without blocking the tool upgrade.
                 if name == "README.md":
                     print(f"Retaining customized README: {path}")

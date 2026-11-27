@@ -26,10 +26,10 @@ python3 -B scripts/mono.py repos
 
 > 用 $mono-start 开始 FEAT-LOGIN。前端和认证后端都已有 STDD。读取各仓的规范、当前接口和测试入口，记录合入目标与本仓变更编号。先对齐共同契约和测试账号上的成功、失败场景，再在任务工作树分别按 STDD 流程推进。使用 $mono-verify 跑一次真实前后端联调，保存两仓版本和验收结果。
 
-终端也可以直接用 [login.task.json](login.task.json) 建任务。若团队需要最新已合并版本，先按仓约定 fetch，再指定 --base。分支命名按各仓实际要求调整。
+终端也可以直接用 [login.task.json](login.task.json) 建任务。工具会自动获取各参与仓目标分支的最新提交。可在 mono.json 用 target_branch 指定各仓的合入分支；需要固定既有版本时用 --base 覆盖。
 
 ~~~sh
-python3 -B scripts/mono.py new /path/to/login.task.json --worktrees --base auth-api=origin/main
+python3 -B scripts/mono.py new /path/to/login.task.json --worktrees
 python3 -B scripts/mono.py status FEAT-LOGIN
 python3 -B scripts/mono.py stdd FEAT-LOGIN frontend 014-login --title "登录页面"
 python3 -B scripts/mono.py stdd FEAT-LOGIN auth-api 021-login --title "登录接口" --design

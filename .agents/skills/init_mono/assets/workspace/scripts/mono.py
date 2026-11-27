@@ -12,7 +12,10 @@ import subprocess
 import sys
 import uuid
 
-from mono_projects import attach, head, prepare_project, read_registry, write_lock, write_project_index, write_registry
+from mono_projects import (
+    attach, git_root, head, prepare_project, project_name, read_registry,
+    remote, task_base, write_lock, write_project_index, write_registry,
+)
 from mono_stdd import bind, describe
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -63,7 +66,8 @@ def add_project(args):
         registry = read_registry(ROOT)
         raw = {key: value for key, value in {
             "name": args.name, "source": args.source, "mode": args.mode, "ref": args.ref,
-            "role": args.role, "owner": args.owner,
+            "role": args.role, "owner": args.owner, "clone_source": args.clone_source,
+            "target_branch": args.target_branch,
         }.items() if value is not None}
         project = prepare_project(raw, Path.cwd(), ROOT, registry["owner"], registry["kind"])
         if any(row["name"] == project["name"] for row in registry["projects"]):
@@ -73,6 +77,100 @@ def add_project(args):
         write_registry(ROOT, registry)
         write_project_index(ROOT, registry)
         print(json.dumps(project, ensure_ascii=False, indent=2))
+
+
+def bootstrap_projects(names, source_args):
+    with write_lock(ROOT / ".mono-registry.lock"):
+        projects = {project["name"]: project for project in read_registry(ROOT)["projects"]}
+        selected = names or list(projects)
+        unknown = set(selected) - projects.keys()
+        if unknown:
+            raise ValueError("unknown projects: " + ", ".join(sorted(unknown)))
+        overrides = key_values(source_args, selected, "source")
+        if (ROOT / "repos").is_symlink():
+            raise ValueError("repos/ must be a directory inside the workspace")
+        for name in dict.fromkeys(selected):
+            project = projects[project_name(name)]
+            if project["mode"] == "reference":
+                print(f"Reference only: {name}")
+                continue
+            relative = Path("repos") / name
+            base = project.get("base_sha", "")
+            if (Path(project.get("path", "")) != relative
+                    or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", base)):
+                raise ValueError(f"{name}: missing checkout path or baseline; review its registration in mono.json")
+            destination = ROOT / relative
+            if destination.exists() or destination.is_symlink():
+                if destination.is_symlink() or git_root(destination) != destination:
+                    raise ValueError(f"{name}: {relative} already exists and is not a project checkout")
+                print(f"Already checked out: {relative}")
+                continue
+            source = overrides.get(name) or project.get("clone_source")
+            if not source and remote(project["source"]):
+                source = project["source"]
+            if not source:
+                raise ValueError(f"{name}: set clone_source in mono.json or pass --source {name}=GIT_URL")
+            if not remote(source):
+                raise ValueError(f"{name}: bootstrap source must be a Git URL")
+            try:
+                attach(ROOT, dict(project, mode="clone", source=source, ref=base))
+            except subprocess.CalledProcessError as error:
+                raise ValueError(
+                    f"{name}: could not restore {base}. Verify repository access and that the commit is published."
+                ) from error
+            print(f"Restored {relative} at {base}")
+
+
+def project_checkout(project):
+    path = project.get("path")
+    if not path:
+        return None
+    location = ROOT / path
+    if git_root(location) != location.resolve():
+        name = project["name"]
+        raise ValueError(f"{name}: missing Git checkout at {path}; run mono.py bootstrap {name}")
+    return location
+
+
+def sync_baseline(location, sha):
+    if git(location, "status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none"):
+        return "local_changes"
+    current = head(location, "HEAD")
+    if current == sha:
+        return "current"
+    if git(location, "branch", "--show-current").strip():
+        return "local_branch"
+    try:
+        git(location, "merge-base", "--is-ancestor", current, sha)
+    except subprocess.CalledProcessError as error:
+        return "diverged" if error.returncode == 1 else "blocked"
+    try:
+        git(location, "switch", "--detach", "--no-overwrite-ignore", "--no-recurse-submodules", sha)
+    except subprocess.CalledProcessError:
+        return "blocked"
+    return "updated"
+
+
+def project_baselines(names, sync=False):
+    projects = {project["name"]: project for project in read_registry(ROOT)["projects"]}
+    selected = dict.fromkeys(names) if names else projects
+    unknown = selected.keys() - projects.keys()
+    if unknown:
+        raise ValueError("unknown projects: " + ", ".join(sorted(unknown)))
+    baselines = {}
+    for name in selected:
+        project = projects[name]
+        if project["mode"] == "reference":
+            continue
+        location = project_checkout(project)
+        if location is None:
+            raise ValueError(f"{name}: missing Git checkout registration; review mono.json")
+        ref, sha = task_base(location, project)
+        baselines[name] = {"path": project["path"], "base_ref": ref, "base_sha": sha}
+    if sync:
+        for baseline in baselines.values():
+            baseline["checkout_state"] = sync_baseline(ROOT / baseline["path"], baseline["base_sha"])
+    print(json.dumps(baselines, ensure_ascii=False, indent=2))
 
 
 def create_task(input_path, use_worktrees, base_args=(), branch_args=()):
@@ -115,8 +213,8 @@ def create_task(input_path, use_worktrees, base_args=(), branch_args=()):
     branch_keys = set()
     for name in names:
         project = known[name]
-        location = ROOT / project["path"] if project.get("path") else None
-        entry = {"path": project.get("path", ""), "source": project["source"]}
+        location = project_checkout(project)
+        entry = {"path": project.get("path", ""), "source": project.get("clone_source", project["source"])}
         if not location and (name in bases or name in branches):
             raise ValueError(f"{name}: attach a Git checkout before selecting a base or branch")
         if use_worktrees and location:
@@ -130,8 +228,8 @@ def create_task(input_path, use_worktrees, base_args=(), branch_args=()):
             if key in branch_keys:
                 raise ValueError("the same source repository appears twice with the same task branch")
             branch_keys.add(key)
-            ref = bases.get(name, "HEAD")
-            entry.update(branch=branch, base_ref=ref, base_sha=head(location, ref),
+            ref, sha = (bases[name], head(location, bases[name])) if name in bases else task_base(location, project)
+            entry.update(branch=branch, base_ref=ref, base_sha=sha,
                          base_path=entry["path"], path="")
         state[name] = entry
     destination.parent.mkdir(exist_ok=True)
@@ -344,9 +442,15 @@ def main():
     add = commands.add_parser("add", help="register and attach another repository")
     add.add_argument("name")
     add.add_argument("source")
-    for option in ("role", "ref", "owner", "mode"):
+    for option in ("role", "ref", "owner", "mode", "clone-source", "target-branch"):
         add.add_argument("--" + option)
+    bootstrap = commands.add_parser("bootstrap", help="restore registered project checkouts after cloning the workspace")
+    bootstrap.add_argument("projects", nargs="*", metavar="PROJECT")
+    bootstrap.add_argument("--source", action="append", default=[], metavar="PROJECT=GIT_URL")
     commands.add_parser("repos", help="list registered repositories")
+    baselines = commands.add_parser("baselines", help="resolve and fetch target commits for feature planning")
+    baselines.add_argument("projects", nargs="*", metavar="PROJECT")
+    baselines.add_argument("--sync", action="store_true", help="fast-forward clean detached base checkouts")
     commands.add_parser("status", help="list task checkouts and their STDD entry points").add_argument("task")
     stdd = commands.add_parser("stdd", help="create or link a native STDD change for a project")
     stdd.add_argument("task")
@@ -374,8 +478,14 @@ def main():
         if args.operation == "add":
             add_project(args)
             return 0
+        if args.operation == "bootstrap":
+            bootstrap_projects(args.projects, args.source)
+            return 0
         if args.operation == "repos":
             print(json.dumps(read_registry(ROOT)["projects"], ensure_ascii=False, indent=2))
+            return 0
+        if args.operation == "baselines":
+            project_baselines(args.projects, args.sync)
             return 0
         if args.operation in {"status", "stdd"}:
             task = task_dir(args.task)
